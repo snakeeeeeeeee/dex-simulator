@@ -1,0 +1,21 @@
+[package]
+name = "dex-simulator-core"
+version = "0.1.0"
+edition = "2021"
+authors = ["Dex Simulator Team <dev@dex-sim.local>"]
+description = "本地 DEX 模拟器核心组件"
+
+[dependencies]
+anyhow = { workspace = true }
+async-trait = { workspace = true }
+config = { workspace = true }
+ethers = { workspace = true }
+log = { workspace = true }
+log4rs = { workspace = true }
+once_cell = { workspace = true }
+serde = { workspace = true }
+serde_yaml = { workspace = true }
+thiserror = { workspace = true }
+tokio = { workspace = true }
+hex = { workspace = true }
+futures-util = { workspace = true }

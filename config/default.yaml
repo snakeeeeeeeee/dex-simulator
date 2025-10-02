@@ -1,0 +1,20 @@
+network:
+  chain_id: 56
+  ws_endpoint: ""
+  http_endpoint: ""
+  event_backfill_blocks: 20
+  ws_retry_secs: 5
+  backfill_chunk_size: 100
+logging:
+  config_file: null
+  level: "info"
+runtime:
+  max_concurrency: 8
+  snapshot_path: "./data/snapshots"
+tokens:
+  whitelist: []
+dex:
+  pancake_v3_bootstrap: "config/pancake_v3_bootstrap.yaml"
+monitoring:
+  event_delay_warn_ms: 7000
+  event_stats_interval: 200

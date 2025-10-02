@@ -1,0 +1,17 @@
+# Rust 编译输出
+/target/
+
+# 运行时生成的快照与缓存
+/data/snapshots/
+/data/forknet_snapshots/
+
+# 日志与调试输出
+*.log
+anvil.log
+
+# 编辑器与系统临时文件
+.DS_Store
+.idea/
+.vscode/
+*.swp
+*.swo

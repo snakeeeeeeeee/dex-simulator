@@ -1,0 +1,17 @@
+[package]
+name = "dex-simulator-cli"
+version = "0.1.0"
+edition = "2021"
+authors = ["Dex Simulator Team <dev@dex-sim.local>"]
+description = "本地 DEX 模拟器命令行工具"
+
+[dependencies]
+anyhow = { workspace = true }
+async-trait = { workspace = true }
+clap = { workspace = true }
+dex-simulator-core = { path = "../core" }
+log = { workspace = true }
+serde_yaml = { workspace = true }
+tokio = { workspace = true }
+ethers = { workspace = true }
+serde_json = { workspace = true }

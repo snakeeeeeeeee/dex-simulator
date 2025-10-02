@@ -1,0 +1,13 @@
+network:
+  chain_id: 56
+  ws_endpoint: "ws://127.0.0.1:8545"
+  http_endpoint: "http://127.0.0.1:8545"
+  event_backfill_blocks: 10
+logging:
+  config_file: null
+  level: "info"
+runtime:
+  max_concurrency: 4
+  snapshot_path: "./data/forknet_snapshots"
+tokens:
+  whitelist: []
