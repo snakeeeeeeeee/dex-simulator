@@ -1,7 +1,7 @@
 network:
   chain_id: 56
-  ws_endpoint: "ws://rpcx.1111.lat/bsc/ws"
-  http_endpoint: "http://rpcx.1111.lat/bsc"
+  ws_endpoint: ""
+  http_endpoint: ""
   event_backfill_blocks: 20
   ws_retry_secs: 5
   backfill_chunk_size: 100
