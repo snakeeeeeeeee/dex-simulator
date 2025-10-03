@@ -43,7 +43,3 @@ cargo check
 3. **运行示例**
 
 默认配置位于 `config/default.yaml`，可按需替换 RPC 节点。详细运行说明与常用命令请参见 `docs/运行指南.md`。
-
-## 下一步计划
-
-开发计划详见 `docs/开发计划.md`，当前阶段聚焦核心架构搭建与 PancakeSwap V2 支持。
