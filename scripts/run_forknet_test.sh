@@ -9,7 +9,7 @@ if ! command -v anvil >/dev/null 2>&1; then
   exit 1
 fi
 
-export BSC_RPC_URL="http://rpcx.1111.lat/bsc"
+export BSC_RPC_URL=""
 
 if [[ -z "${BSC_RPC_URL:-}" ]]; then
   echo "[错误] 请通过环境变量 BSC_RPC_URL 提供可用的 BSC RPC 地址" >&2
