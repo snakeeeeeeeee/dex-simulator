@@ -85,8 +85,7 @@ pub async fn listen(config: &AppConfig, sample_events: u64) -> Result<()> {
     }
 
     let router = Arc::new(router);
-    listener
-        .subscribe(Arc::new(RouterSink {
+    listener.subscribe(Arc::new(RouterSink {
             router: router.clone(),
         }) as Arc<dyn EventSink>)
         .await;
@@ -306,5 +305,44 @@ struct RouterSink {
 impl EventSink for RouterSink {
     async fn handle_event(&self, event: EventEnvelope) -> Result<(), EventListenerError> {
         self.router.dispatch(event).await
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use dex_simulator_core::config::load_config;
+    use std::path::PathBuf;
+    use tokio::fs;
+
+    #[tokio::test]
+    async fn test_listen_with_mock_events() {
+        let config_path =
+            PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../../config/default.yaml");
+        let mut config = load_config(&config_path).expect("加载配置失败");
+        let unique_path = format!(
+            "target/test-snapshots-{}",
+            std::time::SystemTime::now()
+                .duration_since(std::time::UNIX_EPOCH)
+                .unwrap()
+                .as_millis()
+        );
+        config.runtime.snapshot_path = unique_path.clone();
+
+        listen(&config, 1).await.expect("监听逻辑执行失败");
+
+        let mut dir = fs::read_dir(&config.runtime.snapshot_path)
+            .await
+            .expect("读取快照目录失败");
+        let mut has_file = false;
+        while let Some(entry) = dir.next_entry().await.expect("读取目录项失败") {
+            if entry.file_type().await.expect("获取文件类型失败").is_file() {
+                has_file = true;
+                break;
+            }
+        }
+        assert!(has_file, "应当生成至少一个快照文件");
+
+        let _ = fs::remove_dir_all(&config.runtime.snapshot_path).await;
     }
 }

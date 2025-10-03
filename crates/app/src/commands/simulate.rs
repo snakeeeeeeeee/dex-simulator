@@ -3,6 +3,10 @@ use ethers::utils::__serde_json::json;
 use std::sync::Arc;
 use std::time::Instant;
 
+use super::utils::{
+    format_address, format_identifier, parse_pool_identifier, sample_pool, sample_pool_identifier,
+    snapshot_to_json, stats_summary, stats_summary_u128,
+};
 use dex_simulator_core::config::AppConfig;
 use dex_simulator_core::dex::pancake_v2::{PancakeV2PoolState, PancakeV2SwapCalculator};
 use dex_simulator_core::dex::pancake_v3::calculator::PancakeV3SwapCalculator;
@@ -16,12 +20,8 @@ use dex_simulator_core::state::{PoolState, StateError};
 use dex_simulator_core::token_graph::TokenGraph;
 use dex_simulator_core::types::{Amount, Asset, PathLeg, PoolIdentifier, PoolType};
 use ethers::types::{Address, U256};
-use std::str::FromStr;
 use ethers::utils::__serde_json;
-use super::utils::{
-    format_address, format_identifier, parse_pool_identifier, sample_pool, sample_pool_identifier,
-    snapshot_to_json, stats_summary, stats_summary_u128,
-};
+use std::str::FromStr;
 
 /// 执行 PancakeSwap V2 swap 模拟。
 pub async fn simulate_swap(config: &AppConfig, pool_id: String, amount: u128) -> Result<()> {
