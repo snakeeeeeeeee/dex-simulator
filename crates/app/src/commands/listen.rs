@@ -30,7 +30,7 @@ use dex_simulator_core::event::{
 };
 use dex_simulator_core::state::onchain::OnChainStateFetcher;
 use dex_simulator_core::state::repository::{InMemoryPoolRepository, PoolRepository};
-use dex_simulator_core::state::snapshot::{FileSnapshotStore, SnapshotStore};
+use dex_simulator_core::state::snapshot::{InMemorySnapshotStore, SnapshotStore};
 use dex_simulator_core::types::{Asset, PoolType};
 
 use super::utils::{address_to_topic, parse_address_list, pool_type_label};
@@ -43,7 +43,7 @@ pub async fn listen(config: &AppConfig, sample_events: u64) -> Result<()> {
 
     let repo_concrete = Arc::new(InMemoryPoolRepository::new());
     let repository: Arc<dyn PoolRepository> = repo_concrete.clone();
-    let snapshot_store_concrete = Arc::new(FileSnapshotStore::new(&config.runtime.snapshot_path));
+    let snapshot_store_concrete = Arc::new(InMemorySnapshotStore::new());
     let snapshot_store: Arc<dyn SnapshotStore> = snapshot_store_concrete.clone();
     let token_whitelist = parse_address_list(config.tokens.whitelist.as_ref());
 
@@ -545,7 +545,6 @@ mod tests {
     use super::*;
     use dex_simulator_core::config::load_config;
     use std::path::PathBuf;
-    use tokio::fs;
 
     #[tokio::test]
     async fn test_listen_with_mock_events() {
@@ -571,19 +570,5 @@ mod tests {
         config.runtime.snapshot_path = unique_path.clone();
 
         listen(&config, 1).await.expect("监听逻辑执行失败");
-
-        let mut dir = fs::read_dir(&config.runtime.snapshot_path)
-            .await
-            .expect("读取快照目录失败");
-        let mut has_file = false;
-        while let Some(entry) = dir.next_entry().await.expect("读取目录项失败") {
-            if entry.file_type().await.expect("获取文件类型失败").is_file() {
-                has_file = true;
-                break;
-            }
-        }
-        assert!(has_file, "应当生成至少一个快照文件");
-
-        let _ = fs::remove_dir_all(&config.runtime.snapshot_path).await;
     }
 }

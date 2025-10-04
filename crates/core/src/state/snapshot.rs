@@ -1,9 +1,12 @@
+use std::collections::HashMap;
 use std::path::{Path, PathBuf};
+use std::sync::Arc;
 
 use async_trait::async_trait;
 use ethers::abi::AbiEncode;
 use tokio::fs;
 use tokio::io::AsyncWriteExt;
+use tokio::sync::RwLock;
 
 use super::{PoolSnapshot, StateError};
 use crate::types::PoolIdentifier;
@@ -15,6 +18,43 @@ pub trait SnapshotStore: Send + Sync {
     async fn load(&self, id: &PoolIdentifier) -> Result<Option<PoolSnapshot>, StateError>;
     async fn remove(&self, id: &PoolIdentifier) -> Result<(), StateError>;
     async fn list(&self) -> Result<Vec<PoolSnapshot>, StateError>;
+}
+
+/// 内存快照存储，实现轻量级的易失缓存。
+#[derive(Debug, Default, Clone)]
+pub struct InMemorySnapshotStore {
+    inner: Arc<RwLock<HashMap<PoolIdentifier, PoolSnapshot>>>,
+}
+
+impl InMemorySnapshotStore {
+    pub fn new() -> Self {
+        Self::default()
+    }
+}
+
+#[async_trait]
+impl SnapshotStore for InMemorySnapshotStore {
+    async fn save(&self, snapshot: &PoolSnapshot) -> Result<(), StateError> {
+        let mut guard = self.inner.write().await;
+        guard.insert(snapshot.id.clone(), snapshot.clone());
+        Ok(())
+    }
+
+    async fn load(&self, id: &PoolIdentifier) -> Result<Option<PoolSnapshot>, StateError> {
+        let guard = self.inner.read().await;
+        Ok(guard.get(id).cloned())
+    }
+
+    async fn remove(&self, id: &PoolIdentifier) -> Result<(), StateError> {
+        let mut guard = self.inner.write().await;
+        guard.remove(id);
+        Ok(())
+    }
+
+    async fn list(&self) -> Result<Vec<PoolSnapshot>, StateError> {
+        let guard = self.inner.read().await;
+        Ok(guard.values().cloned().collect())
+    }
 }
 
 /// 基于本地文件系统的 YAML 快照存储实现。
