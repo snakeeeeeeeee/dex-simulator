@@ -7,7 +7,7 @@ use dex_simulator_core::event::queue::{EventQueue, InMemoryEventQueue};
 use dex_simulator_core::event::store::{EventStore, InMemoryEventStore};
 use dex_simulator_core::event::{EventEnvelope, EventKind};
 use dex_simulator_core::state::PoolSnapshot;
-use dex_simulator_core::types::{Asset, PoolIdentifier, PoolType};
+use dex_simulator_core::types::{Asset, ChainNamespace, PoolIdentifier, PoolType};
 
 /// 解析池子标识。
 pub fn parse_pool_identifier(input: &str) -> Option<PoolIdentifier> {
@@ -26,8 +26,13 @@ pub fn parse_pool_identifier(input: &str) -> Option<PoolIdentifier> {
         other => PoolType::Other(other.to_string()),
     };
     Some(PoolIdentifier {
+        chain_namespace: ChainNamespace::Evm,
         chain_id,
-        dex: parts[1].to_string(),
+        dex: if parts[1].is_empty() {
+            pool_type.label()
+        } else {
+            parts[1].to_string()
+        },
         address,
         pool_type,
     })
@@ -36,8 +41,9 @@ pub fn parse_pool_identifier(input: &str) -> Option<PoolIdentifier> {
 /// 构造示例池子标识。
 pub fn sample_pool_identifier(chain_id: u64) -> PoolIdentifier {
     PoolIdentifier {
+        chain_namespace: ChainNamespace::Evm,
         chain_id,
-        dex: "pancakeswap".into(),
+        dex: PoolType::PancakeV2.label(),
         address: Address::from_str("0x000000000000000000000000000000000000abcd")
             .unwrap_or_else(|_| Address::zero()),
         pool_type: PoolType::PancakeV2,

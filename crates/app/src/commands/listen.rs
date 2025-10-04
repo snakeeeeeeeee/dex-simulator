@@ -31,7 +31,7 @@ use dex_simulator_core::event::{
 use dex_simulator_core::state::onchain::OnChainStateFetcher;
 use dex_simulator_core::state::repository::{InMemoryPoolRepository, PoolRepository};
 use dex_simulator_core::state::snapshot::{FileSnapshotStore, SnapshotStore};
-use dex_simulator_core::types::Asset;
+use dex_simulator_core::types::{Asset, PoolType};
 
 use super::utils::{address_to_topic, parse_address_list, pool_type_label};
 
@@ -80,7 +80,7 @@ pub async fn listen(config: &AppConfig, sample_events: u64) -> Result<()> {
 
     let fetcher = provider
         .as_ref()
-        .map(|prov| OnChainStateFetcher::new(prov.clone(), config.network.chain_id, "pancakeswap"));
+        .map(|prov| OnChainStateFetcher::new(prov.clone(), config.network.chain_id));
 
     let anchor_block = if sample_events == 0 {
         if let Some(prov) = provider.as_ref() {
@@ -147,7 +147,7 @@ pub async fn listen(config: &AppConfig, sample_events: u64) -> Result<()> {
     let handler_v2 = Arc::new(PancakeV2EventHandler::new(
         PancakeV2Config {
             chain_id: config.network.chain_id,
-            dex: "pancakeswap".into(),
+            dex: PoolType::PancakeV2.label(),
             factory_address: Address::from_str("0xcA143Ce32Fe78f1f7019d7d551a6402fC5350c73")
                 .unwrap_or_else(|_| Address::zero()),
             default_decimals: 18,
@@ -165,7 +165,7 @@ pub async fn listen(config: &AppConfig, sample_events: u64) -> Result<()> {
         let handler_v3 = PancakeV3EventHandler::new(
             PancakeV3Config {
                 chain_id: config.network.chain_id,
-                dex: "pancakeswap".into(),
+                dex: PoolType::PancakeV3.label(),
                 default_decimals: 18,
             },
             repository.clone(),
@@ -362,11 +362,11 @@ async fn build_subscription_metadata(
     let mut labels: HashMap<Address, String> = HashMap::new();
     for pool in v2_bootstrap {
         address_set.insert(pool.pool);
-        labels.insert(pool.pool, "pancake_v2".into());
+        labels.insert(pool.pool, PoolType::PancakeV2.label());
     }
     for pool in v3_bootstrap {
         address_set.insert(pool.pool);
-        labels.insert(pool.pool, "pancake_v3".into());
+        labels.insert(pool.pool, PoolType::PancakeV3.label());
     }
 
     if let Ok(snapshots) = repository.list().await {

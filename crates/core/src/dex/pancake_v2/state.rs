@@ -5,7 +5,7 @@ use serde::{Deserialize, Serialize};
 use crate::dex::pancake_v2::event::{PancakeV2Event, PancakeV2EventError};
 use crate::event::EventEnvelope;
 use crate::state::{PoolSnapshot, Reserves, StateError};
-use crate::types::{Asset, PoolIdentifier};
+use crate::types::{Asset, ChainNamespace, PoolIdentifier, PoolType};
 
 /// PancakeSwap V2 池子快照额外信息。
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -34,6 +34,9 @@ pub struct PancakeV2PoolState {
 
 impl PancakeV2PoolState {
     pub fn new(id: PoolIdentifier, token0: Asset, token1: Asset) -> Self {
+        let mut id = id;
+        id.dex = PoolType::PancakeV2.label();
+        id.chain_namespace = ChainNamespace::Evm;
         let mut state = Self {
             id,
             token0,
@@ -50,8 +53,11 @@ impl PancakeV2PoolState {
     pub fn from_snapshot(snapshot: &PoolSnapshot) -> Result<Self, StateError> {
         let extra: PancakeV2SnapshotExtra = serde_yaml::from_value(snapshot.extra.clone())
             .map_err(|err| StateError::Serialize(err.to_string()))?;
+        let mut id = snapshot.id.clone();
+        id.dex = id.pool_type.label();
+        id.chain_namespace = ChainNamespace::Evm;
         let mut state = Self {
-            id: snapshot.id.clone(),
+            id,
             token0: extra.token0,
             token1: extra.token1,
             reserve0: extra.reserve0,
@@ -335,11 +341,13 @@ mod tests {
 
     fn sample_pool_state(reserve0: u128, reserve1: u128) -> PancakeV2PoolState {
         let (token0, token1) = sample_assets();
+        let pool_type = crate::types::PoolType::PancakeV2;
         let id = PoolIdentifier {
+            chain_namespace: crate::types::ChainNamespace::Evm,
             chain_id: 56,
-            dex: "pancake".into(),
+            dex: pool_type.label(),
             address: addr(0x33),
-            pool_type: crate::types::PoolType::PancakeV2,
+            pool_type,
         };
         let mut state = PancakeV2PoolState::new(id, token0, token1);
         state.set_reserves(reserve0, reserve1);

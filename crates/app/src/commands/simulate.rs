@@ -18,7 +18,7 @@ use dex_simulator_core::state::repository::{InMemoryPoolRepository, PoolReposito
 use dex_simulator_core::state::snapshot::{FileSnapshotStore, SnapshotStore};
 use dex_simulator_core::state::{PoolState, StateError};
 use dex_simulator_core::token_graph::TokenGraph;
-use dex_simulator_core::types::{Amount, Asset, PathLeg, PoolIdentifier, PoolType};
+use dex_simulator_core::types::{Amount, Asset, ChainNamespace, PathLeg, PoolIdentifier, PoolType};
 use ethers::types::{Address, U256};
 use ethers::utils::__serde_json;
 use std::str::FromStr;
@@ -280,8 +280,9 @@ async fn build_v3_components(
     use dex_simulator_core::dex::pancake_v3::state::PancakeV3PoolState;
 
     let pool_id = PoolIdentifier {
+        chain_namespace: ChainNamespace::Evm,
         chain_id: 56,
-        dex: "pancakeswap".into(),
+        dex: PoolType::PancakeV3.label(),
         address: Address::from_str("0x0000000000000000000000000000000000000333")
             .unwrap_or_else(|_| Address::repeat_byte(0x44)),
         pool_type: PoolType::PancakeV3,

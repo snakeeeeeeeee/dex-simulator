@@ -1,7 +1,9 @@
 use std::fmt;
 
 use ethers::types::{Address, H256, U256};
-use serde::{Deserialize, Serialize};
+use serde::{Deserialize, Deserializer, Serialize, Serializer};
+
+use crate::serde_utils;
 
 /// 资产信息描述。
 #[derive(Debug, Clone, PartialEq, Eq, Hash, Serialize, Deserialize)]
@@ -12,12 +14,30 @@ pub struct Asset {
 }
 
 /// 金额类型，内部使用 u128 表示。
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct Amount(pub u128);
 
 impl fmt::Display for Amount {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         write!(f, "{}", self.0)
+    }
+}
+
+impl Serialize for Amount {
+    fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error>
+    where
+        S: Serializer,
+    {
+        serde_utils::u128_string::serialize(&self.0, serializer)
+    }
+}
+
+impl<'de> Deserialize<'de> for Amount {
+    fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
+    where
+        D: Deserializer<'de>,
+    {
+        serde_utils::u128_string::deserialize(deserializer).map(Amount)
     }
 }
 
@@ -32,9 +52,39 @@ pub enum PoolType {
     Other(String),
 }
 
+impl PoolType {
+    /// 返回带版本的 DEX 标签字符串。
+    pub fn label(&self) -> String {
+        match self {
+            PoolType::PancakeV2 => "pancake_v2".into(),
+            PoolType::PancakeV3 => "pancake_v3".into(),
+            PoolType::PancakeV4 => "pancake_v4".into(),
+            PoolType::UniswapV2 => "uniswap_v2".into(),
+            PoolType::UniswapV3 => "uniswap_v3".into(),
+            PoolType::Other(name) => name.clone(),
+        }
+    }
+}
+
+/// 链类别，方便跨链扩展。
+#[derive(Debug, Clone, PartialEq, Eq, Hash, Serialize, Deserialize)]
+pub enum ChainNamespace {
+    Evm,
+    Solana,
+    Other(String),
+}
+
+impl Default for ChainNamespace {
+    fn default() -> Self {
+        ChainNamespace::Evm
+    }
+}
+
 /// 池子唯一标识，由链 id、合约地址、DEX 名称组成。
 #[derive(Debug, Clone, PartialEq, Eq, Hash, Serialize, Deserialize)]
 pub struct PoolIdentifier {
+    #[serde(default)]
+    pub chain_namespace: ChainNamespace,
     pub chain_id: u64,
     pub dex: String,
     pub address: Address,

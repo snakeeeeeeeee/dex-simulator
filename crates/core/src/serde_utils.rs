@@ -68,7 +68,10 @@ pub mod option_u128_string {
         D: Deserializer<'de>,
     {
         let opt = Option::<String>::deserialize(deserializer)?;
-        Ok(opt.map(|s| s.parse::<u128>()).transpose().map_err(de::Error::custom)?)
+        Ok(opt
+            .map(|s| s.parse::<u128>())
+            .transpose()
+            .map_err(de::Error::custom)?)
     }
 }
 

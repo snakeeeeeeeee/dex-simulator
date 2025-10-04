@@ -10,7 +10,7 @@ use crate::dex::bootstrap::{V2BootstrapPool, V3BootstrapPool};
 use crate::dex::pancake_v2::state::PancakeV2PoolState;
 use crate::dex::pancake_v3::state::PancakeV3PoolState;
 use crate::state::{PoolSnapshot, PoolState};
-use crate::types::{PoolIdentifier, PoolType};
+use crate::types::{ChainNamespace, PoolIdentifier, PoolType};
 
 abigen!(
     PancakeV2Pair,
@@ -43,22 +43,18 @@ abigen!(
 pub struct OnChainStateFetcher<M: Middleware> {
     provider: Arc<M>,
     chain_id: u64,
-    dex: String,
 }
 
 impl<M: Middleware> OnChainStateFetcher<M> {
-    pub fn new(provider: Arc<M>, chain_id: u64, dex: impl Into<String>) -> Self {
-        Self {
-            provider,
-            chain_id,
-            dex: dex.into(),
-        }
+    pub fn new(provider: Arc<M>, chain_id: u64) -> Self {
+        Self { provider, chain_id }
     }
 
     fn pool_identifier(&self, address: Address, pool_type: PoolType) -> PoolIdentifier {
         PoolIdentifier {
+            chain_namespace: ChainNamespace::Evm,
             chain_id: self.chain_id,
-            dex: self.dex.clone(),
+            dex: pool_type.label(),
             address,
             pool_type,
         }

@@ -13,7 +13,7 @@ use crate::state::repository::PoolRepository;
 use crate::state::snapshot::SnapshotStore;
 use crate::state::PoolSnapshot;
 use crate::state::PoolState;
-use crate::types::{Asset, PoolIdentifier, PoolType};
+use crate::types::{Asset, ChainNamespace, PoolIdentifier, PoolType};
 
 /// PancakeSwap V3 事件处理器配置。
 #[derive(Debug, Clone)]
@@ -27,7 +27,7 @@ impl Default for PancakeV3Config {
     fn default() -> Self {
         Self {
             chain_id: 56,
-            dex: "pancakeswap".into(),
+            dex: PoolType::PancakeV3.label(),
             default_decimals: 18,
         }
     }
@@ -130,6 +130,7 @@ impl PancakeV3EventHandler {
 
     fn pool_identifier(&self, pool: Address) -> PoolIdentifier {
         PoolIdentifier {
+            chain_namespace: ChainNamespace::Evm,
             chain_id: self.config.chain_id,
             dex: self.config.dex.clone(),
             address: pool,

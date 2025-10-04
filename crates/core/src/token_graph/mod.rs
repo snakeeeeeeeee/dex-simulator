@@ -163,11 +163,13 @@ mod tests {
     }
 
     fn pool(id: u8) -> PoolIdentifier {
+        let pool_type = crate::types::PoolType::PancakeV2;
         PoolIdentifier {
+            chain_namespace: crate::types::ChainNamespace::Evm,
             chain_id: 56,
-            dex: "pancake".into(),
+            dex: pool_type.label(),
             address: addr(id),
-            pool_type: crate::types::PoolType::PancakeV2,
+            pool_type,
         }
     }
 

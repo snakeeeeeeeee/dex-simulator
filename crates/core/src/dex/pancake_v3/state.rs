@@ -10,7 +10,7 @@ use crate::dex::pancake_v3::event::PancakeV3Event;
 use crate::dex::traits::ConcentratedLiquidityPoolState;
 use crate::event::EventEnvelope;
 use crate::state::{PoolSnapshot, PoolState, Reserves, StateError};
-use crate::types::{Asset, PoolIdentifier};
+use crate::types::{Asset, ChainNamespace, PoolIdentifier, PoolType};
 
 /// V3 Tick 信息。
 #[derive(Debug, Clone, Default, Serialize, Deserialize)]
@@ -33,7 +33,9 @@ pub struct PancakeV3PoolState {
 }
 
 impl PancakeV3PoolState {
-    pub fn new(id: PoolIdentifier, token0: Asset, token1: Asset) -> Self {
+    pub fn new(mut id: PoolIdentifier, token0: Asset, token1: Asset) -> Self {
+        id.dex = PoolType::PancakeV3.label();
+        id.chain_namespace = ChainNamespace::Evm;
         let mut reserves = Reserves::new();
         reserves.set(token0.clone(), 0);
         reserves.set(token1.clone(), 0);
@@ -71,8 +73,11 @@ impl PancakeV3PoolState {
     pub fn from_snapshot(snapshot: &PoolSnapshot) -> Result<Self, StateError> {
         let extra: PancakeV3Snapshot = serde_yaml::from_value(snapshot.extra.clone())
             .map_err(|err| StateError::Serialize(err.to_string()))?;
+        let mut id = snapshot.id.clone();
+        id.dex = id.pool_type.label();
+        id.chain_namespace = ChainNamespace::Evm;
         Ok(Self {
-            id: snapshot.id.clone(),
+            id,
             token0: extra.token0,
             token1: extra.token1,
             sqrt_price_x96: extra.sqrt_price_x96,
@@ -325,11 +330,13 @@ mod tests {
     }
 
     fn sample_identifier() -> PoolIdentifier {
+        let pool_type = crate::types::PoolType::PancakeV3;
         PoolIdentifier {
+            chain_namespace: crate::types::ChainNamespace::Evm,
             chain_id: 56,
-            dex: "pancake".into(),
+            dex: pool_type.label(),
             address: Address::repeat_byte(0x33),
-            pool_type: crate::types::PoolType::PancakeV3,
+            pool_type,
         }
     }
 
