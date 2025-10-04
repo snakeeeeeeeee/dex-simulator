@@ -12,8 +12,11 @@ use crate::types::{Asset, PoolIdentifier};
 pub struct PancakeV2SnapshotExtra {
     pub token0: Asset,
     pub token1: Asset,
+    #[serde(with = "crate::serde_utils::u128_string")]
     pub reserve0: u128,
+    #[serde(with = "crate::serde_utils::u128_string")]
     pub reserve1: u128,
+    #[serde(with = "crate::serde_utils::option_u128_string")]
     pub total_supply: Option<u128>,
 }
 
@@ -97,6 +100,10 @@ impl PancakeV2PoolState {
         self.reserve0 = reserve0;
         self.reserve1 = reserve1;
         self.refresh_reserves();
+    }
+
+    pub fn set_total_supply(&mut self, total_supply: Option<u128>) {
+        self.total_supply = total_supply;
     }
 
     pub fn apply_pancake_event(&mut self, event: &PancakeV2Event) -> Result<(), StateError> {

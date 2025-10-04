@@ -10,3 +10,4 @@ pub mod state;
 pub mod syncer;
 pub mod token_graph;
 pub mod types;
+pub mod serde_utils;

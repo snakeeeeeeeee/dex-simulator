@@ -57,6 +57,17 @@ impl PancakeV3PoolState {
         &self.token1
     }
 
+    pub fn set_price_liquidity(&mut self, sqrt_price_x96: U256, liquidity: U256, tick: i32) {
+        self.sqrt_price_x96 = sqrt_price_x96;
+        self.liquidity = liquidity;
+        self.tick = tick;
+    }
+
+    pub fn set_reserves(&mut self, amount0: u128, amount1: u128) {
+        self.reserves.set(self.token0.clone(), amount0);
+        self.reserves.set(self.token1.clone(), amount1);
+    }
+
     pub fn from_snapshot(snapshot: &PoolSnapshot) -> Result<Self, StateError> {
         let extra: PancakeV3Snapshot = serde_yaml::from_value(snapshot.extra.clone())
             .map_err(|err| StateError::Serialize(err.to_string()))?;
@@ -130,7 +141,13 @@ impl PancakeV3PoolState {
             PancakeV3Event::Collect {
                 amount0, amount1, ..
             } => {
-                self.sub_reserve(*amount0, *amount1)?;
+                if let Err(err) = self.sub_reserve(*amount0, *amount1) {
+                    log::warn!(
+                        "Collect 扣减失败: pool={:#x}, 错误: {}",
+                        self.id.address,
+                        err
+                    );
+                }
                 Ok(())
             }
             PancakeV3Event::Unknown => Ok(()),
@@ -267,7 +284,9 @@ impl ConcentratedLiquidityPoolState for PancakeV3PoolState {
 pub struct PancakeV3Snapshot {
     pub token0: Asset,
     pub token1: Asset,
+    #[serde(with = "crate::serde_utils::u256_string")]
     pub sqrt_price_x96: U256,
+    #[serde(with = "crate::serde_utils::u256_string")]
     pub liquidity: U256,
     pub tick: i32,
     pub ticks: HashMap<i32, TickInfo>,

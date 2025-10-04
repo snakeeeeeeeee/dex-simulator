@@ -1,0 +1,9 @@
+- pool: "0xF0a949d3D93B833C183a27Ee067165B6F2C9625e"
+  token0:
+    address: "0x0A43fC31a73013089DF59194872Ecae4cAe14444"
+    symbol: "4"
+    decimals: 18
+  token1:
+    address: "0xbb4CdB9CBd36B01bD1cBaEBF2De08d9173bc095c"
+    symbol: "WBNB"
+    decimals: 18

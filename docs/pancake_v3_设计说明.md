@@ -72,6 +72,7 @@ CLI 侧在 `crates/app/src/commands/` 中通过监听与模拟命令调度该模
 
 - `config/default.yaml` 可通过 `dex.pancake_v3_bootstrap` 指定追踪池子列表；格式见 `docs/pancake_v3_bootstrap.md`。
 - 监听命令在真实模式下，会自动根据快照仓库与 bootstrap 汇总订阅地址，避免遗漏。
+- `state::onchain::OnChainStateFetcher` 提供启动时的链上快照能力：在监听前先拉取 `slot0`、`liquidity` 及 Token 余额，将结果写入仓库与快照存储，后续事件（含 Collect）即可在链下重放。
 - 当前已支持事件回放与监控日志，后续扩展方向：
   - 引入多 fee tier 的路径搜索。
   - 在模拟计算中处理 Tick 穿越及流动性分段。

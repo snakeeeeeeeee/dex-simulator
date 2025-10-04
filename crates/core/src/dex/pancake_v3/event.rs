@@ -116,15 +116,15 @@ fn parse_initialize(event: &EventEnvelope) -> Result<PancakeV3Event, PancakeV3Ev
 }
 
 fn parse_mint(event: &EventEnvelope) -> Result<PancakeV3Event, PancakeV3EventError> {
-    if event.topics.len() < 3 {
+    if event.topics.len() < 4 {
         return Err(PancakeV3EventError::MissingTopics);
     }
-    let sender = topic_to_address(&event.topics[1]);
-    let owner = topic_to_address(&event.topics[2]);
+    let owner = topic_to_address(&event.topics[1]);
+    let tick_lower = topic_to_int24(&event.topics[2])?;
+    let tick_upper = topic_to_int24(&event.topics[3])?;
     let decoded = decode(
         &[
-            ParamType::Int(24),
-            ParamType::Int(24),
+            ParamType::Address,
             ParamType::Uint(128),
             ParamType::Uint(256),
             ParamType::Uint(256),
@@ -132,26 +132,30 @@ fn parse_mint(event: &EventEnvelope) -> Result<PancakeV3Event, PancakeV3EventErr
         &event.payload,
     )
     .map_err(|err| PancakeV3EventError::Decode(err.to_string()))?;
+    let sender = decoded[0]
+        .clone()
+        .into_address()
+        .ok_or_else(|| PancakeV3EventError::Decode("sender address 缺失".into()))?;
     Ok(PancakeV3Event::Mint {
         sender,
         owner,
-        tick_lower: expect_int(&decoded[0], 24)?,
-        tick_upper: expect_int(&decoded[1], 24)?,
-        liquidity: expect_uint(&decoded[2], 128)?,
-        amount0: expect_uint(&decoded[3], 256)?,
-        amount1: expect_uint(&decoded[4], 256)?,
+        tick_lower,
+        tick_upper,
+        liquidity: expect_uint(&decoded[1], 128)?,
+        amount0: expect_uint(&decoded[2], 256)?,
+        amount1: expect_uint(&decoded[3], 256)?,
     })
 }
 
 fn parse_burn(event: &EventEnvelope) -> Result<PancakeV3Event, PancakeV3EventError> {
-    if event.topics.len() < 2 {
+    if event.topics.len() < 4 {
         return Err(PancakeV3EventError::MissingTopics);
     }
     let owner = topic_to_address(&event.topics[1]);
+    let tick_lower = topic_to_int24(&event.topics[2])?;
+    let tick_upper = topic_to_int24(&event.topics[3])?;
     let decoded = decode(
         &[
-            ParamType::Int(24),
-            ParamType::Int(24),
             ParamType::Uint(128),
             ParamType::Uint(256),
             ParamType::Uint(256),
@@ -161,11 +165,11 @@ fn parse_burn(event: &EventEnvelope) -> Result<PancakeV3Event, PancakeV3EventErr
     .map_err(|err| PancakeV3EventError::Decode(err.to_string()))?;
     Ok(PancakeV3Event::Burn {
         owner,
-        tick_lower: expect_int(&decoded[0], 24)?,
-        tick_upper: expect_int(&decoded[1], 24)?,
-        liquidity: expect_uint(&decoded[2], 128)?,
-        amount0: expect_uint(&decoded[3], 256)?,
-        amount1: expect_uint(&decoded[4], 256)?,
+        tick_lower,
+        tick_upper,
+        liquidity: expect_uint(&decoded[0], 128)?,
+        amount0: expect_uint(&decoded[1], 256)?,
+        amount1: expect_uint(&decoded[2], 256)?,
     })
 }
 
@@ -198,15 +202,15 @@ fn parse_swap(event: &EventEnvelope) -> Result<PancakeV3Event, PancakeV3EventErr
 }
 
 fn parse_collect(event: &EventEnvelope) -> Result<PancakeV3Event, PancakeV3EventError> {
-    if event.topics.len() < 3 {
+    if event.topics.len() < 4 {
         return Err(PancakeV3EventError::MissingTopics);
     }
     let sender = topic_to_address(&event.topics[1]);
-    let recipient = topic_to_address(&event.topics[2]);
+    let tick_lower = topic_to_int24(&event.topics[2])?;
+    let tick_upper = topic_to_int24(&event.topics[3])?;
     let decoded = decode(
         &[
-            ParamType::Int(24),
-            ParamType::Int(24),
+            ParamType::Address,
             ParamType::Uint(128),
             ParamType::Uint(128),
         ],
@@ -215,11 +219,14 @@ fn parse_collect(event: &EventEnvelope) -> Result<PancakeV3Event, PancakeV3Event
     .map_err(|err| PancakeV3EventError::Decode(err.to_string()))?;
     Ok(PancakeV3Event::Collect {
         sender,
-        recipient,
-        tick_lower: expect_int(&decoded[0], 24)?,
-        tick_upper: expect_int(&decoded[1], 24)?,
-        amount0: expect_uint(&decoded[2], 128)?,
-        amount1: expect_uint(&decoded[3], 128)?,
+        recipient: decoded[0]
+            .clone()
+            .into_address()
+            .ok_or_else(|| PancakeV3EventError::Decode("recipient address 缺失".into()))?,
+        tick_lower,
+        tick_upper,
+        amount0: expect_uint(&decoded[1], 128)?,
+        amount1: expect_uint(&decoded[2], 128)?,
     })
 }
 
@@ -247,6 +254,12 @@ fn expect_int_256(token: &Token) -> Result<I256, PancakeV3EventError> {
         .into_int()
         .ok_or_else(|| PancakeV3EventError::Decode("期待 Int256".into()))
         .map(I256::from_raw)
+}
+
+fn topic_to_int24(topic: &H256) -> Result<i32, PancakeV3EventError> {
+    let value = U256::from_big_endian(topic.as_bytes());
+    let signed = I256::from_raw(value);
+    Ok(signed.as_i32())
 }
 
 /// 返回事件签名 topic 集合，便于统一订阅。

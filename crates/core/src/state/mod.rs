@@ -1,3 +1,4 @@
+pub mod onchain;
 pub mod repository;
 pub mod snapshot;
 

@@ -14,6 +14,7 @@ runtime:
 tokens:
   whitelist: []
 dex:
+  pancake_v2_bootstrap: "config/pancake_v2_bootstrap.yaml"
   pancake_v3_bootstrap: "config/pancake_v3_bootstrap.yaml"
 monitoring:
   event_delay_warn_ms: 7000

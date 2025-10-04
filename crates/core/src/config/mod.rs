@@ -56,6 +56,7 @@ pub struct TokenConfig {
 /// DEX 相关配置。
 #[derive(Debug, Clone, Deserialize, Default)]
 pub struct DexConfig {
+    pub pancake_v2_bootstrap: Option<String>,
     pub pancake_v3_bootstrap: Option<String>,
 }
 

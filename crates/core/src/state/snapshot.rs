@@ -51,8 +51,17 @@ impl SnapshotStore for FileSnapshotStore {
             .await
             .map_err(|err| StateError::Io(err.to_string()))?;
 
-        let serialized = serde_yaml::to_string(snapshot)
-            .map_err(|err| StateError::Serialize(err.to_string()))?;
+        let serialized = match serde_yaml::to_string(snapshot) {
+            Ok(data) => data,
+            Err(err) => {
+                log::warn!(
+                    "快照序列化失败, pool={:#x}, 错误: {}",
+                    snapshot.id.address,
+                    err
+                );
+                return Ok(());
+            }
+        };
         let path = self.snapshot_path(&snapshot.id);
         let mut file = fs::File::create(&path)
             .await

@@ -1,12 +1,10 @@
 use std::collections::HashMap;
-use std::str::FromStr;
 use std::sync::Arc;
 
 use async_trait::async_trait;
 use ethers::types::Address;
-use serde::Deserialize;
-use tokio::fs;
 
+use crate::dex::bootstrap::{load_v3_bootstrap, V3BootstrapPool};
 use crate::dex::pancake_v3::event::{PancakeV3Event, PancakeV3EventError};
 use crate::dex::pancake_v3::state::PancakeV3PoolState;
 use crate::dex::traits::DexEventHandler;
@@ -35,28 +33,6 @@ impl Default for PancakeV3Config {
     }
 }
 
-/// V3 池子元数据。
-#[derive(Debug, Clone)]
-pub struct PoolBootstrap {
-    pub pool: Address,
-    pub token0: Asset,
-    pub token1: Asset,
-}
-
-#[derive(Debug, Deserialize)]
-pub struct PoolBootstrapConfig {
-    pub pool: String,
-    pub token0: TokenMeta,
-    pub token1: TokenMeta,
-}
-
-#[derive(Debug, Deserialize)]
-pub struct TokenMeta {
-    pub address: String,
-    pub symbol: String,
-    pub decimals: u8,
-}
-
 /// PancakeSwap V3 事件处理器。
 #[derive(Clone)]
 pub struct PancakeV3EventHandler {
@@ -71,7 +47,7 @@ impl PancakeV3EventHandler {
         config: PancakeV3Config,
         repository: Arc<dyn PoolRepository>,
         snapshot_store: Option<Arc<dyn SnapshotStore>>,
-        bootstraps: Vec<PoolBootstrap>,
+        bootstraps: Vec<V3BootstrapPool>,
     ) -> Self {
         let mut tokens = HashMap::new();
         for item in bootstraps {
@@ -85,39 +61,18 @@ impl PancakeV3EventHandler {
         }
     }
 
+    pub fn token_assets(&self, pool: &Address) -> Option<&(Asset, Asset)> {
+        self.tokens.get(pool)
+    }
+
     pub async fn from_config_file<P: AsRef<std::path::Path>>(
         path: P,
         config: PancakeV3Config,
         repository: Arc<dyn PoolRepository>,
         snapshot_store: Option<Arc<dyn SnapshotStore>>,
     ) -> Result<Self, EventListenerError> {
-        let raw = fs::read_to_string(path)
-            .await
-            .map_err(|err| EventListenerError::Internal(err.to_string()))?;
-        let configs: Vec<PoolBootstrapConfig> = serde_yaml::from_str(&raw)
-            .map_err(|err| EventListenerError::Internal(err.to_string()))?;
-        let mut bootstraps = Vec::new();
-        for item in configs {
-            let pool = Address::from_str(&item.pool)
-                .map_err(|err| EventListenerError::Internal(err.to_string()))?;
-            let token0 = Asset {
-                address: Address::from_str(&item.token0.address)
-                    .map_err(|err| EventListenerError::Internal(err.to_string()))?,
-                symbol: item.token0.symbol,
-                decimals: item.token0.decimals,
-            };
-            let token1 = Asset {
-                address: Address::from_str(&item.token1.address)
-                    .map_err(|err| EventListenerError::Internal(err.to_string()))?,
-                symbol: item.token1.symbol,
-                decimals: item.token1.decimals,
-            };
-            bootstraps.push(PoolBootstrap {
-                pool,
-                token0,
-                token1,
-            });
-        }
+        let bootstraps =
+            load_v3_bootstrap(path).map_err(|err| EventListenerError::Internal(err.to_string()))?;
         Ok(Self::new(config, repository, snapshot_store, bootstraps))
     }
 

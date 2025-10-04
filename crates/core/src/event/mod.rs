@@ -9,6 +9,8 @@ use std::time::Duration;
 
 use async_trait::async_trait;
 use ethers::types::{Address, Bytes, TransactionReceipt, H256};
+use hex::encode as hex_encode;
+use serde_json::json;
 use tokio::sync::{Mutex, RwLock};
 use tokio::task::JoinHandle;
 use tokio::time::sleep;
@@ -24,6 +26,7 @@ pub enum EventKind {
     Burn,
     PairCreated,
     Sync,
+    Collect,
     Unknown,
 }
 
@@ -121,8 +124,15 @@ impl LocalEventListener {
         while self.running.load(Ordering::SeqCst) {
             match self.queue.dequeue().await {
                 Some(event) => {
+                    let event_clone = event.clone();
                     if let Err(err) = self.dispatch(event).await {
-                        log::error!("事件分发失败: {}", err);
+                        log::error!(
+                            target: "dex_simulator_core::event",
+                            "事件分发失败: {err}; event: {}",
+                            serde_json::to_string_pretty(&Self::event_json(&event_clone))
+                                .unwrap_or_else(|_| "<serde_json_error>".to_string())
+                        );
+                        log::error!(target: "dex_simulator_core::event", "错误详情: {err:?}");
                     }
                 }
                 None => {
@@ -132,6 +142,18 @@ impl LocalEventListener {
                 }
             }
         }
+    }
+
+    fn event_json(event: &EventEnvelope) -> serde_json::Value {
+        json!({
+            "kind": format!("{:?}", event.kind),
+            "block_number": event.block_number,
+            "transaction_hash": format!("{:#x}", event.transaction_hash),
+            "log_index": event.log_index,
+            "address": format!("{:#x}", event.address),
+            "topics": event.topics.iter().map(|t| format!("{:#x}", t)).collect::<Vec<_>>(),
+            "payload": format!("0x{}", hex_encode(&event.payload)),
+        })
     }
 
     async fn fetch_loop(self: Arc<Self>, source: Arc<dyn EventSource>) {

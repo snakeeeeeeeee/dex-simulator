@@ -1,4 +1,4 @@
-use std::collections::HashSet;
+use std::collections::{HashMap, HashSet};
 use std::sync::Arc;
 
 use async_trait::async_trait;
@@ -46,6 +46,7 @@ pub struct PancakeV2EventHandler {
     snapshot_store: Option<Arc<dyn SnapshotStore>>,
     token_graph: Arc<RwLock<TokenGraph>>,
     token_whitelist: Option<HashSet<Address>>,
+    bootstrap_tokens: Option<HashMap<Address, (Asset, Asset)>>,
 }
 
 impl PancakeV2EventHandler {
@@ -53,6 +54,7 @@ impl PancakeV2EventHandler {
         config: PancakeV2Config,
         repository: Arc<dyn PoolRepository>,
         snapshot_store: Option<Arc<dyn SnapshotStore>>,
+        bootstrap_tokens: Option<HashMap<Address, (Asset, Asset)>>,
     ) -> Self {
         let whitelist = config
             .token_whitelist
@@ -64,6 +66,7 @@ impl PancakeV2EventHandler {
             snapshot_store,
             token_graph: Arc::new(RwLock::new(TokenGraph::new())),
             token_whitelist: whitelist,
+            bootstrap_tokens,
         }
     }
 
@@ -82,8 +85,13 @@ impl PancakeV2EventHandler {
                     return Ok(());
                 }
                 let id = self.pool_identifier(pair);
-                let token0_asset = self.build_asset(token0, "T0");
-                let token1_asset = self.build_asset(token1, "T1");
+                let (token0_asset, token1_asset) =
+                    self.bootstrap_assets(pair).unwrap_or_else(|| {
+                        (
+                            self.build_asset(token0, "T0"),
+                            self.build_asset(token1, "T1"),
+                        )
+                    });
                 if !self
                     .should_track_pool(&[token0_asset.address, token1_asset.address])
                     .await
@@ -180,6 +188,12 @@ impl PancakeV2EventHandler {
             symbol: format!("{}-{}", prefix, suffix),
             decimals: self.config.default_decimals,
         }
+    }
+
+    fn bootstrap_assets(&self, pair: Address) -> Option<(Asset, Asset)> {
+        self.bootstrap_tokens
+            .as_ref()
+            .and_then(|map| map.get(&pair).cloned())
     }
 
     /// 返回配置的工厂地址，若未设置则返回 None。
