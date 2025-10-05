@@ -28,3 +28,4 @@ hex = { version = "0.4", default-features = false, features = ["std"] }
 serde_json = "1.0.145"
 clap = { version = "4", features = ["derive"] }
 futures-util = "0.3"
+axum = { version = "0.7", features = ["json"] }

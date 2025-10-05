@@ -9,5 +9,14 @@ logging:
 runtime:
   max_concurrency: 4
   snapshot_path: "./data/forknet_snapshots"
+  http_bind: "127.0.0.1:8081"
+services:
+  listener:
+    enabled: false
+    sample_events: 0
+  http:
+    enabled: false
+  metrics:
+    enabled: false
 tokens:
   whitelist: []

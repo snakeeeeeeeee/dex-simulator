@@ -6,6 +6,7 @@ use ethers::types::{Address, BlockNumber, Bytes, Filter, ValueOrArray, H256, U25
 use std::collections::{HashMap, HashSet};
 use std::str::FromStr;
 use std::sync::Arc;
+use tokio::sync::watch;
 use tokio::time::{sleep, Duration};
 
 use dex_simulator_core::config::AppConfig;
@@ -34,17 +35,36 @@ use dex_simulator_core::state::snapshot::{InMemorySnapshotStore, SnapshotStore};
 use dex_simulator_core::types::{Asset, PoolType};
 
 use super::utils::{address_to_topic, parse_address_list, pool_type_label};
+use crate::shared::SharedObjects;
 
 /// 启动监听流程。
 pub async fn listen(config: &AppConfig, sample_events: u64) -> Result<()> {
+    listen_with_state(config, sample_events, None, None).await
+}
+
+/// 启动监听流程（可复用外部状态及关闭信号）。
+pub async fn listen_with_state(
+    config: &AppConfig,
+    sample_events: u64,
+    shared: Option<SharedObjects>,
+    shutdown: Option<watch::Receiver<bool>>,
+) -> Result<()> {
     let queue: Arc<dyn EventQueue> = InMemoryEventQueue::shared();
     let store: Arc<dyn EventStore> = Arc::new(InMemoryEventStore::new());
     let listener = Arc::new(LocalEventListener::new(queue.clone(), store.clone()));
 
-    let repo_concrete = Arc::new(InMemoryPoolRepository::new());
-    let repository: Arc<dyn PoolRepository> = repo_concrete.clone();
-    let snapshot_store_concrete = Arc::new(InMemorySnapshotStore::new());
-    let snapshot_store: Arc<dyn SnapshotStore> = snapshot_store_concrete.clone();
+    let (repository, snapshot_store): (Arc<dyn PoolRepository>, Arc<dyn SnapshotStore>) =
+        if let Some(shared_state) = shared {
+            (
+                shared_state.repository.clone(),
+                shared_state.snapshot_store.clone(),
+            )
+        } else {
+            (
+                Arc::new(InMemoryPoolRepository::new()),
+                Arc::new(InMemorySnapshotStore::new()),
+            )
+        };
     let token_whitelist = parse_address_list(config.tokens.whitelist.as_ref());
 
     let v2_bootstrap = if let Some(path) = config.dex.pancake_v2_bootstrap.as_ref() {
@@ -103,7 +123,7 @@ pub async fn listen(config: &AppConfig, sample_events: u64) -> Result<()> {
             for entry in &v2_bootstrap {
                 match fetcher.fetch_v2_snapshot(entry).await {
                     Ok(snapshot) => {
-                        repo_concrete
+                        repository
                             .upsert(snapshot.clone())
                             .await
                             .map_err(|err| anyhow!(err.to_string()))?;
@@ -124,7 +144,7 @@ pub async fn listen(config: &AppConfig, sample_events: u64) -> Result<()> {
             for entry in &v3_bootstrap {
                 match fetcher.fetch_v3_snapshot(entry).await {
                     Ok(snapshot) => {
-                        repo_concrete
+                        repository
                             .upsert(snapshot.clone())
                             .await
                             .map_err(|err| anyhow!(err.to_string()))?;
@@ -227,16 +247,20 @@ pub async fn listen(config: &AppConfig, sample_events: u64) -> Result<()> {
     listener.clone().start().await?;
     if sample_events == 0 {
         log::info!("实时监听已启动，按 Ctrl+C 结束...");
-        tokio::signal::ctrl_c()
-            .await
-            .map_err(|err| anyhow!(format!("等待 Ctrl+C 失败: {}", err)))?;
+        if let Some(mut rx) = shutdown {
+            let _ = rx.changed().await;
+        } else {
+            tokio::signal::ctrl_c()
+                .await
+                .map_err(|err| anyhow!(format!("等待 Ctrl+C 失败: {}", err)))?;
+        }
     } else {
         let wait_ms = 300 * (sample_events + 4);
         sleep(Duration::from_millis(wait_ms)).await;
     }
     listener.clone().stop().await?;
 
-    let snapshots = repo_concrete.list().await?;
+    let snapshots = repository.list().await?;
     for snapshot in snapshots {
         log::info!("监听结束，池子状态: {:?}", snapshot);
     }

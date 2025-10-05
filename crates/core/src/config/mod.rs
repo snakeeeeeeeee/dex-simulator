@@ -6,7 +6,6 @@ use serde::Deserialize;
 
 static GLOBAL_CONFIG: OnceCell<AppConfig> = OnceCell::new();
 
-
 /// 全局应用配置，后续可扩展更多字段。
 #[derive(Debug, Clone, Deserialize)]
 pub struct AppConfig {
@@ -19,6 +18,8 @@ pub struct AppConfig {
     pub dex: DexConfig,
     #[serde(default)]
     pub monitoring: MonitoringConfig,
+    #[serde(default)]
+    pub services: ServicesConfig,
 }
 
 /// 链路相关配置，包含 RPC 节点与订阅设置。
@@ -46,6 +47,8 @@ pub struct LoggingConfig {
 pub struct RuntimeConfig {
     pub max_concurrency: usize,
     pub snapshot_path: String,
+    #[serde(default = "default_http_bind")]
+    pub http_bind: String,
 }
 
 /// Token 相关配置。
@@ -93,6 +96,70 @@ const fn default_ws_retry_secs() -> u64 {
 
 const fn default_backfill_chunk_size() -> u64 {
     500
+}
+
+fn default_http_bind() -> String {
+    "127.0.0.1:8080".to_string()
+}
+
+/// 服务编排配置。
+#[derive(Debug, Clone, Deserialize, Default)]
+pub struct ServicesConfig {
+    #[serde(default)]
+    pub listener: ListenerServiceConfig,
+    #[serde(default)]
+    pub http: HttpServiceConfig,
+    #[serde(default)]
+    pub metrics: ServiceToggle,
+}
+
+#[derive(Debug, Clone, Deserialize)]
+pub struct ListenerServiceConfig {
+    #[serde(default = "default_disabled")]
+    pub enabled: bool,
+    #[serde(default)]
+    pub sample_events: u64,
+}
+
+impl Default for ListenerServiceConfig {
+    fn default() -> Self {
+        Self {
+            enabled: default_disabled(),
+            sample_events: 0,
+        }
+    }
+}
+
+#[derive(Debug, Clone, Deserialize)]
+pub struct HttpServiceConfig {
+    #[serde(default = "default_disabled")]
+    pub enabled: bool,
+}
+
+impl Default for HttpServiceConfig {
+    fn default() -> Self {
+        Self {
+            enabled: default_disabled(),
+        }
+    }
+}
+
+#[derive(Debug, Clone, Deserialize)]
+pub struct ServiceToggle {
+    #[serde(default = "default_disabled")]
+    pub enabled: bool,
+}
+
+impl Default for ServiceToggle {
+    fn default() -> Self {
+        Self {
+            enabled: default_disabled(),
+        }
+    }
+}
+
+const fn default_disabled() -> bool {
+    false
 }
 
 /// 从配置文件加载应用配置，支持 YAML/TOML 等格式。

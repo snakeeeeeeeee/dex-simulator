@@ -11,6 +11,15 @@ logging:
 runtime:
   max_concurrency: 8
   snapshot_path: "./data/snapshots"
+  http_bind: "127.0.0.1:8080"
+services:
+  http:
+    enabled: true
+  listener:
+    enabled: true
+    sample_events: 0
+  metrics:
+    enabled: false
 tokens:
   whitelist: []
 dex:

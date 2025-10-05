@@ -33,7 +33,7 @@ pub enum Commands {
         pool: String,
     },
     /// 执行 PancakeSwap V2 模拟
-    SimulateSwap {
+    SimulatePancakeV2Swap {
         #[arg(long, value_name = "POOL_ID", default_value = "sample")]
         pool: String,
         #[arg(
@@ -62,7 +62,7 @@ pub enum Commands {
         iterations: u32,
     },
     /// 演示 PancakeSwap V3 模拟
-    SimulateSwapV3 {
+    SimulatePancakeV3Swap {
         #[arg(
             long,
             value_name = "AMOUNT",

@@ -1,5 +1,4 @@
 use anyhow::{anyhow, Result};
-use ethers::utils::__serde_json::json;
 use std::sync::Arc;
 use std::time::Instant;
 
@@ -7,6 +6,7 @@ use super::utils::{
     format_address, format_identifier, parse_pool_identifier, sample_pool, sample_pool_identifier,
     snapshot_to_json, stats_summary, stats_summary_u128,
 };
+use crate::shared::SharedObjects;
 use dex_simulator_core::config::AppConfig;
 use dex_simulator_core::dex::pancake_v2::{PancakeV2PoolState, PancakeV2SwapCalculator};
 use dex_simulator_core::dex::pancake_v3::calculator::PancakeV3SwapCalculator;
@@ -20,62 +20,30 @@ use dex_simulator_core::state::{PoolState, StateError};
 use dex_simulator_core::token_graph::TokenGraph;
 use dex_simulator_core::types::{Amount, Asset, ChainNamespace, PathLeg, PoolIdentifier, PoolType};
 use ethers::types::{Address, U256};
-use ethers::utils::__serde_json;
+use serde_json::{self, json, Value};
 use std::str::FromStr;
 
 /// 执行 PancakeSwap V2 swap 模拟。
 pub async fn simulate_swap(config: &AppConfig, pool_id: String, amount: u128) -> Result<()> {
-    let (identifier, repo, path) = prepare_simulation(config, &pool_id).await?;
-    let repo_trait: Arc<dyn PoolRepository> = repo.clone();
-    let calculator = PancakeV2SwapCalculator::new(repo_trait, 25);
-    let request = SwapSimulationRequest {
-        path,
-        amount_in: Amount(amount),
-        min_amount_out: None,
-        sandbox: true,
-    };
-
-    let start = Instant::now();
-    match calculator.simulate(request).await {
-        Ok(result) => {
-            let duration_ms = start.elapsed().as_secs_f64() * 1000.0;
-            let path_json: Vec<_> = result
-                .executed_path
-                .iter()
-                .map(|leg| {
-                    json!({
-                        "pool": format_address(leg.pool.address),
-                        "input": format_address(leg.input.address),
-                        "output": format_address(leg.output.address),
-                        "symbol_in": leg.input.symbol,
-                        "symbol_out": leg.output.symbol,
-                        "fee_bps": leg.fee,
-                    })
-                })
-                .collect();
-            let output = json!({
-                "pool_id": format_identifier(&identifier),
-                "amount_in": amount,
-                "amount_out": result.amount_out.0,
-                "fees_paid": result.fees_paid.0,
-                "slippage_bps": result.slippage_bps,
-                "duration_ms": duration_ms,
-                "calc_duration_ms": result.metrics.calc_duration_ms,
-                "steps": result.metrics.steps.iter().map(|step| json!({
-                    "name": step.name,
-                    "duration_ms": step.duration_ms,
-                })).collect::<Vec<_>>(),
-                "path": path_json,
-                "final_snapshot": result
-                    .snapshots
-                    .last()
-                    .map(snapshot_to_json)
-                    .unwrap_or(json!(null)),
-            });
-            println!("{}", __serde_json::to_string_pretty(&output)?);
+    match build_pancake_v2_response(config, None, &pool_id, amount).await {
+        Ok(output) => {
+            println!("{}", serde_json::to_string_pretty(&output)?);
         }
         Err(err) => {
             log::error!("模拟失败: {}", err);
+        }
+    }
+    Ok(())
+}
+
+/// 演示 PancakeSwap V3 模拟。
+pub async fn simulate_swap_v3(amount: u128, reverse: bool) -> Result<()> {
+    match build_pancake_v3_response(None, amount, reverse).await {
+        Ok(output) => {
+            println!("{}", serde_json::to_string_pretty(&output)?);
+        }
+        Err(err) => {
+            log::error!("V3 模拟失败: {}", err);
         }
     }
     Ok(())
@@ -91,7 +59,7 @@ pub async fn bench_swap(
     if iterations == 0 {
         return Err(anyhow!("iterations 必须大于 0"));
     }
-    let (identifier, repo, path) = prepare_simulation(config, &pool_id).await?;
+    let (identifier, repo, path) = prepare_simulation(config, None, &pool_id).await?;
     let repo_trait: Arc<dyn PoolRepository> = repo.clone();
     let calculator = PancakeV2SwapCalculator::new(repo_trait, 25);
 
@@ -152,13 +120,19 @@ pub async fn bench_swap(
             .unwrap_or(json!(null)),
     });
 
-    println!("{}", __serde_json::to_string_pretty(&summary)?);
+    println!("{}", serde_json::to_string_pretty(&summary)?);
     Ok(())
 }
 
-/// 演示 PancakeSwap V3 模拟。
-pub async fn simulate_swap_v3(amount: u128, reverse: bool) -> Result<()> {
-    let (identifier, _repo, path, calculator) = build_v3_components(reverse).await?;
+pub async fn build_pancake_v2_response(
+    config: &AppConfig,
+    shared: Option<&SharedObjects>,
+    pool_id: &str,
+    amount: u128,
+) -> Result<Value> {
+    let (identifier, repo, path) = prepare_simulation(config, shared, pool_id).await?;
+    let repo_trait: Arc<dyn PoolRepository> = repo.clone();
+    let calculator = PancakeV2SwapCalculator::new(repo_trait, 25);
     let request = SwapSimulationRequest {
         path,
         amount_in: Amount(amount),
@@ -167,59 +141,125 @@ pub async fn simulate_swap_v3(amount: u128, reverse: bool) -> Result<()> {
     };
 
     let start = Instant::now();
-    match calculator.simulate(request).await {
-        Ok(result) => {
-            let output = json!({
-                "pool_id": format_identifier(&identifier),
-                "amount_in": amount,
-                "amount_out": result.amount_out.0,
-                "fees_paid": result.fees_paid.0,
-                "duration_ms": start.elapsed().as_secs_f64() * 1000.0,
-                "path": result.executed_path.iter().map(|leg| json!({
-                    "pool": format_address(leg.pool.address),
-                    "input": format_address(leg.input.address),
-                    "output": format_address(leg.output.address),
-                    "symbol_in": leg.input.symbol,
-                    "symbol_out": leg.output.symbol,
-                    "fee_bps": leg.fee,
-                })).collect::<Vec<_>>(),
-                "metrics": {
-                    "calc_duration_ms": result.metrics.calc_duration_ms,
-                    "steps": result.metrics.steps.iter().map(|step| json!({
-                        "name": step.name,
-                        "duration_ms": step.duration_ms,
-                    })).collect::<Vec<_>>()
-                }
-            });
-            println!("{}", __serde_json::to_string_pretty(&output)?);
+    let result = calculator
+        .simulate(request)
+        .await
+        .map_err(|err| anyhow!(err.to_string()))?;
+    let duration_ms = start.elapsed().as_secs_f64() * 1000.0;
+    let path_json: Vec<_> = result
+        .executed_path
+        .iter()
+        .map(|leg| {
+            json!({
+                "pool": format_address(leg.pool.address),
+                "input": format_address(leg.input.address),
+                "output": format_address(leg.output.address),
+                "symbol_in": leg.input.symbol,
+                "symbol_out": leg.output.symbol,
+                "fee_bps": leg.fee,
+            })
+        })
+        .collect();
+
+    Ok(json!({
+        "pool_id": format_identifier(&identifier),
+        "amount_in": amount,
+        "amount_out": result.amount_out.0,
+        "fees_paid": result.fees_paid.0,
+        "slippage_bps": result.slippage_bps,
+        "duration_ms": duration_ms,
+        "calc_duration_ms": result.metrics.calc_duration_ms,
+        "steps": result.metrics.steps.iter().map(|step| json!({
+            "name": step.name,
+            "duration_ms": step.duration_ms,
+        })).collect::<Vec<_>>(),
+        "path": path_json,
+        "final_snapshot": result
+            .snapshots
+            .last()
+            .map(snapshot_to_json)
+            .unwrap_or(json!(null)),
+    }))
+}
+
+pub async fn build_pancake_v3_response(
+    shared: Option<&SharedObjects>,
+    amount: u128,
+    reverse: bool,
+) -> Result<Value> {
+    let (identifier, _repo, path, calculator) = build_v3_components(shared, reverse).await?;
+    let request = SwapSimulationRequest {
+        path,
+        amount_in: Amount(amount),
+        min_amount_out: None,
+        sandbox: true,
+    };
+
+    let start = Instant::now();
+    let result = calculator
+        .simulate(request)
+        .await
+        .map_err(|err| anyhow!(err.to_string()))?;
+
+    Ok(json!({
+        "pool_id": format_identifier(&identifier),
+        "amount_in": amount,
+        "amount_out": result.amount_out.0,
+        "fees_paid": result.fees_paid.0,
+        "duration_ms": start.elapsed().as_secs_f64() * 1000.0,
+        "path": result.executed_path.iter().map(|leg| json!({
+            "pool": format_address(leg.pool.address),
+            "input": format_address(leg.input.address),
+            "output": format_address(leg.output.address),
+            "symbol_in": leg.input.symbol,
+            "symbol_out": leg.output.symbol,
+            "fee_bps": leg.fee,
+        })).collect::<Vec<_>>(),
+        "metrics": {
+            "calc_duration_ms": result.metrics.calc_duration_ms,
+            "steps": result.metrics.steps.iter().map(|step| json!({
+                "name": step.name,
+                "duration_ms": step.duration_ms,
+            })).collect::<Vec<_>>()
         }
-        Err(err) => {
-            log::error!("V3 模拟失败: {}", err);
-        }
-    }
-    Ok(())
+    }))
 }
 
 async fn prepare_simulation(
     config: &AppConfig,
+    shared: Option<&SharedObjects>,
     pool_id: &str,
-) -> Result<(PoolIdentifier, Arc<InMemoryPoolRepository>, Vec<PathLeg>)> {
+) -> Result<(PoolIdentifier, Arc<dyn PoolRepository>, Vec<PathLeg>)> {
     let identifier = if pool_id == "sample" {
         sample_pool_identifier(config.network.chain_id)
     } else {
         parse_pool_identifier(pool_id).ok_or_else(|| anyhow!("无法解析池子标识"))?
     };
 
-    let repo = Arc::new(InMemoryPoolRepository::new());
-    let store = FileSnapshotStore::new(&config.runtime.snapshot_path);
-    if let Some(snapshot) = store.load(&identifier).await? {
-        repo.upsert(snapshot).await?;
-    } else {
-        let (pool_id, token0, token1) = sample_pool(config.network.chain_id);
-        let mut state = PancakeV2PoolState::new(pool_id.clone(), token0.clone(), token1.clone());
-        state.set_reserves(1_000_000_000_000_000_000u128, 500_000_000_000_000_000u128);
-        repo.upsert(state.to_snapshot()?).await?;
-        log::info!("使用示例池子进行模拟: {:?}", pool_id);
+    let (repo, snapshot_store): (Arc<dyn PoolRepository>, Arc<dyn SnapshotStore>) =
+        if let Some(shared_state) = shared {
+            (
+                shared_state.repository.clone(),
+                shared_state.snapshot_store.clone(),
+            )
+        } else {
+            (
+                Arc::new(InMemoryPoolRepository::new()),
+                Arc::new(FileSnapshotStore::new(&config.runtime.snapshot_path)),
+            )
+        };
+
+    if repo.get(&identifier).await?.is_none() {
+        if let Some(snapshot) = snapshot_store.load(&identifier).await? {
+            repo.upsert(snapshot).await?;
+        } else {
+            let (pool_id, token0, token1) = sample_pool(config.network.chain_id);
+            let mut state =
+                PancakeV2PoolState::new(pool_id.clone(), token0.clone(), token1.clone());
+            state.set_reserves(1_000_000_000_000_000_000u128, 500_000_000_000_000_000u128);
+            repo.upsert(state.to_snapshot()?).await?;
+            log::info!("使用示例池子进行模拟: {:?}", pool_id);
+        }
     }
 
     let path = build_graph_path(&repo, &identifier, 4).await?;
@@ -227,7 +267,7 @@ async fn prepare_simulation(
 }
 
 async fn build_graph_path(
-    repo: &Arc<InMemoryPoolRepository>,
+    repo: &Arc<dyn PoolRepository>,
     identifier: &PoolIdentifier,
     max_hops: usize,
 ) -> Result<Vec<PathLeg>, SimulationError> {
@@ -269,10 +309,11 @@ async fn build_graph_path(
 }
 
 async fn build_v3_components(
+    shared: Option<&SharedObjects>,
     reverse: bool,
 ) -> Result<(
     PoolIdentifier,
-    Arc<InMemoryPoolRepository>,
+    Arc<dyn PoolRepository>,
     Vec<PathLeg>,
     PancakeV3SwapCalculator,
 )> {
@@ -320,8 +361,17 @@ async fn build_v3_components(
         })
         .map_err(|err| anyhow!(err.to_string()))?;
 
-    let repo = Arc::new(InMemoryPoolRepository::new());
-    repo.upsert(state.snapshot()).await?;
+    let repo: Arc<dyn PoolRepository> = if let Some(shared_state) = shared {
+        let repo = shared_state.repository.clone();
+        if repo.get(&pool_id).await?.is_none() {
+            repo.upsert(state.snapshot()).await?;
+        }
+        repo
+    } else {
+        let repo = Arc::new(InMemoryPoolRepository::new());
+        repo.upsert(state.snapshot()).await?;
+        repo
+    };
 
     let path_leg = if !reverse {
         PathLeg {
