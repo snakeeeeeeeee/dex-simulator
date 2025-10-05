@@ -6,6 +6,7 @@ use serde::Deserialize;
 
 static GLOBAL_CONFIG: OnceCell<AppConfig> = OnceCell::new();
 
+
 /// 全局应用配置，后续可扩展更多字段。
 #[derive(Debug, Clone, Deserialize)]
 pub struct AppConfig {
