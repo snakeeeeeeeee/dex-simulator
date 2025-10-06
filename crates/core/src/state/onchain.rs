@@ -3,7 +3,7 @@ use std::sync::Arc;
 
 use ethers::contract::abigen;
 use ethers::providers::Middleware;
-use ethers::types::{Address, U256};
+use ethers::types::{Address, BlockId, BlockNumber, U256};
 use thiserror::Error;
 
 use crate::dex::bootstrap::{V2BootstrapPool, V3BootstrapPool};
@@ -64,13 +64,29 @@ impl<M: Middleware> OnChainStateFetcher<M> {
         &self,
         pool: &V2BootstrapPool,
     ) -> Result<PoolSnapshot, OnChainSnapshotError> {
+        self.fetch_v2_snapshot_at(pool, None).await
+    }
+
+    pub async fn fetch_v2_snapshot_at(
+        &self,
+        pool: &V2BootstrapPool,
+        block: Option<u64>,
+    ) -> Result<PoolSnapshot, OnChainSnapshotError> {
         let pair = PancakeV2Pair::new(pool.pool, self.provider.clone());
-        let reserves = pair
-            .get_reserves()
+        let block_id = block.map(|num| BlockId::Number(BlockNumber::Number(num.into())));
+        let mut reserves_call = pair.get_reserves();
+        if let Some(id) = block_id.clone() {
+            reserves_call = reserves_call.block(id);
+        }
+        let reserves = reserves_call
             .call()
             .await
             .map_err(|err| OnChainSnapshotError::Rpc(err.to_string()))?;
-        let total_supply = match pair.total_supply().call().await {
+        let mut total_supply_call = pair.total_supply();
+        if let Some(id) = block_id.clone() {
+            total_supply_call = total_supply_call.block(id);
+        }
+        let total_supply = match total_supply_call.call().await {
             Ok(supply) => Some(u256_to_u128(supply)?),
             Err(err) => {
                 log::warn!(
@@ -100,25 +116,48 @@ impl<M: Middleware> OnChainStateFetcher<M> {
         &self,
         pool: &V3BootstrapPool,
     ) -> Result<PoolSnapshot, OnChainSnapshotError> {
+        self.fetch_v3_snapshot_at(pool, None).await
+    }
+
+    pub async fn fetch_v3_snapshot_at(
+        &self,
+        pool: &V3BootstrapPool,
+        block: Option<u64>,
+    ) -> Result<PoolSnapshot, OnChainSnapshotError> {
         let contract = PancakeV3PoolContract::new(pool.pool, self.provider.clone());
-        let slot0 = contract
-            .slot_0()
+        let block_id = block.map(|num| BlockId::Number(BlockNumber::Number(num.into())));
+        let mut slot0_call = contract.slot_0();
+        if let Some(id) = block_id.clone() {
+            slot0_call = slot0_call.block(id);
+        }
+        let slot0 = slot0_call
             .call()
             .await
             .map_err(|err| OnChainSnapshotError::Rpc(err.to_string()))?;
-        let liquidity = contract
-            .liquidity()
+        let mut liquidity_call = contract.liquidity();
+        if let Some(id) = block_id.clone() {
+            liquidity_call = liquidity_call.block(id);
+        }
+        let liquidity = liquidity_call
             .call()
             .await
             .map_err(|err| OnChainSnapshotError::Rpc(err.to_string()))?;
 
-        let token0_balance = Erc20::new(pool.token0.address, self.provider.clone())
-            .balance_of(pool.pool)
+        let mut token0_balance_call =
+            Erc20::new(pool.token0.address, self.provider.clone()).balance_of(pool.pool);
+        if let Some(id) = block_id.clone() {
+            token0_balance_call = token0_balance_call.block(id);
+        }
+        let token0_balance = token0_balance_call
             .call()
             .await
             .map_err(|err| OnChainSnapshotError::Rpc(err.to_string()))?;
-        let token1_balance = Erc20::new(pool.token1.address, self.provider.clone())
-            .balance_of(pool.pool)
+        let mut token1_balance_call =
+            Erc20::new(pool.token1.address, self.provider.clone()).balance_of(pool.pool);
+        if let Some(id) = block_id.clone() {
+            token1_balance_call = token1_balance_call.block(id);
+        }
+        let token1_balance = token1_balance_call
             .call()
             .await
             .map_err(|err| OnChainSnapshotError::Rpc(err.to_string()))?;

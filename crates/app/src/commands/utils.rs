@@ -177,6 +177,8 @@ pub async fn bootstrap_components() {
         .enqueue(EventEnvelope {
             kind: EventKind::Unknown,
             block_number: 0,
+            block_hash: None,
+            block_timestamp: None,
             transaction_hash: Default::default(),
             log_index: 0,
             address: Default::default(),
@@ -188,6 +190,8 @@ pub async fn bootstrap_components() {
         .append(&EventEnvelope {
             kind: EventKind::Unknown,
             block_number: 0,
+            block_hash: None,
+            block_timestamp: None,
             transaction_hash: Default::default(),
             log_index: 0,
             address: Default::default(),

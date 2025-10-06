@@ -30,6 +30,8 @@ pub struct PancakeV3PoolState {
     tick: i32,
     reserves: Reserves,
     ticks: HashMap<i32, TickInfo>,
+    fees_token0: U256,
+    fees_token1: U256,
 }
 
 impl PancakeV3PoolState {
@@ -48,6 +50,8 @@ impl PancakeV3PoolState {
             tick: 0,
             reserves,
             ticks: HashMap::new(),
+            fees_token0: U256::zero(),
+            fees_token1: U256::zero(),
         }
     }
 
@@ -85,6 +89,8 @@ impl PancakeV3PoolState {
             tick: extra.tick,
             reserves: snapshot.reserves.clone(),
             ticks: extra.ticks,
+            fees_token0: extra.fees_token0,
+            fees_token1: extra.fees_token1,
         })
     }
 
@@ -152,6 +158,9 @@ impl PancakeV3PoolState {
                         self.id.address,
                         err
                     );
+                } else {
+                    self.fees_token0 += *amount0;
+                    self.fees_token1 += *amount1;
                 }
                 Ok(())
             }
@@ -261,6 +270,8 @@ impl PoolState for PancakeV3PoolState {
             liquidity: self.liquidity,
             tick: self.tick,
             ticks: self.ticks.clone(),
+            fees_token0: self.fees_token0,
+            fees_token1: self.fees_token1,
         };
         let extra = serde_yaml::to_value(&snapshot).expect("snapshot serialize");
         PoolSnapshot {
@@ -295,6 +306,10 @@ pub struct PancakeV3Snapshot {
     pub liquidity: U256,
     pub tick: i32,
     pub ticks: HashMap<i32, TickInfo>,
+    #[serde(with = "crate::serde_utils::u256_string")]
+    pub fees_token0: U256,
+    #[serde(with = "crate::serde_utils::u256_string")]
+    pub fees_token1: U256,
 }
 
 fn u256_to_u128(value: U256) -> Result<u128, StateError> {

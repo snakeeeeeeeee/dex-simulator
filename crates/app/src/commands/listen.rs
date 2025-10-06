@@ -1,8 +1,8 @@
 use anyhow::{anyhow, Result};
 use async_trait::async_trait;
 use ethers::abi::{encode, Token};
-use ethers::providers::{Http, Middleware, Provider};
-use ethers::types::{Address, BlockNumber, Bytes, Filter, ValueOrArray, H256, U256};
+use ethers::providers::{Http, Provider};
+use ethers::types::{Address, Bytes, H256, U256};
 use std::collections::{HashMap, HashSet};
 use std::str::FromStr;
 use std::sync::Arc;
@@ -32,7 +32,7 @@ use dex_simulator_core::event::{
 use dex_simulator_core::state::onchain::OnChainStateFetcher;
 use dex_simulator_core::state::repository::{InMemoryPoolRepository, PoolRepository};
 use dex_simulator_core::state::snapshot::{InMemorySnapshotStore, SnapshotStore};
-use dex_simulator_core::types::{Asset, PoolType};
+use dex_simulator_core::types::{Asset, ChainNamespace, PoolIdentifier, PoolType};
 
 use super::utils::{address_to_topic, parse_address_list, pool_type_label};
 use crate::shared::SharedObjects;
@@ -89,80 +89,24 @@ pub async fn listen_with_state(
                 .collect(),
         )
     };
+    let v3_pool_map: HashMap<Address, V3BootstrapPool> = v3_bootstrap
+        .iter()
+        .map(|entry| (entry.pool, entry.clone()))
+        .collect();
 
     let provider = match Provider::<Http>::try_from(config.network.http_endpoint.as_str()) {
         Ok(p) => Some(Arc::new(p)),
         Err(err) => {
-            log::warn!("创建 HTTP Provider 失败，跳过启动快照与历史回放: {}", err);
+            log::warn!("创建 HTTP Provider 失败，后续无法按需补齐状态: {}", err);
             None
         }
     };
-
-    let fetcher = provider
-        .as_ref()
-        .map(|prov| OnChainStateFetcher::new(prov.clone(), config.network.chain_id));
-
-    let anchor_block = if sample_events == 0 {
-        if let Some(prov) = provider.as_ref() {
-            match prov.get_block_number().await {
-                Ok(number) => Some(number.as_u64()),
-                Err(err) => {
-                    log::warn!("获取最新块失败，跳过历史回放: {}", err);
-                    None
-                }
-            }
-        } else {
-            None
-        }
-    } else {
-        None
-    };
-
-    if sample_events == 0 {
-        if let Some(fetcher) = fetcher.as_ref() {
-            for entry in &v2_bootstrap {
-                match fetcher.fetch_v2_snapshot(entry).await {
-                    Ok(snapshot) => {
-                        repository
-                            .upsert(snapshot.clone())
-                            .await
-                            .map_err(|err| anyhow!(err.to_string()))?;
-                        if let Err(err) = snapshot_store.save(&snapshot).await {
-                            log::warn!("写入 V2 快照失败: pool={:#x}, 错误: {}", entry.pool, err);
-                        }
-                    }
-                    Err(err) => {
-                        log::warn!(
-                            "V2 池子链上快照拉取失败: pool={:#x}, 错误: {}",
-                            entry.pool,
-                            err
-                        );
-                    }
-                }
-            }
-
-            for entry in &v3_bootstrap {
-                match fetcher.fetch_v3_snapshot(entry).await {
-                    Ok(snapshot) => {
-                        repository
-                            .upsert(snapshot.clone())
-                            .await
-                            .map_err(|err| anyhow!(err.to_string()))?;
-                        if let Err(err) = snapshot_store.save(&snapshot).await {
-                            log::warn!("写入 V3 快照失败: pool={:#x}, 错误: {}", entry.pool, err);
-                        }
-                    }
-                    Err(err) => {
-                        log::warn!(
-                            "V3 池子链上快照拉取失败: pool={:#x}, 错误: {}",
-                            entry.pool,
-                            err
-                        );
-                    }
-                }
-            }
-        }
-    }
+    let fetcher = provider.as_ref().map(|prov| {
+        Arc::new(OnChainStateFetcher::new(
+            prov.clone(),
+            config.network.chain_id,
+        ))
+    });
 
     let handler_v2 = Arc::new(PancakeV2EventHandler::new(
         PancakeV2Config {
@@ -197,45 +141,28 @@ pub async fn listen_with_state(
     }
 
     let router = Arc::new(router_inner);
-    listener
-        .subscribe(Arc::new(RouterSink {
-            router: router.clone(),
-        }) as Arc<dyn EventSink>)
-        .await;
 
     let metadata =
         build_subscription_metadata(repository.clone(), &v2_bootstrap, &v3_bootstrap).await?;
+
+    let router_sink = Arc::new(RouterSink::new(
+        router.clone(),
+        repository.clone(),
+        Some(snapshot_store.clone()),
+        v2_token_map.clone(),
+        v3_pool_map.clone(),
+        fetcher.clone(),
+        metadata.pool_labels.clone(),
+        config.network.chain_id,
+    ));
+    listener.subscribe(router_sink as Arc<dyn EventSink>).await;
 
     let logging_sink: Arc<dyn EventSink> =
         Arc::new(LoggingEventSink::new(metadata.pool_labels.clone()));
     listener.subscribe(logging_sink).await;
 
-    if sample_events == 0 {
-        if let (Some(prov), Some(anchor)) = (provider.as_ref(), anchor_block) {
-            match prov.get_block_number().await {
-                Ok(number) => {
-                    let latest_after = number.as_u64();
-                    if latest_after > anchor {
-                        replay_events(
-                            prov.clone(),
-                            router.clone(),
-                            &metadata,
-                            anchor + 1,
-                            latest_after,
-                            config.network.backfill_chunk_size.max(1),
-                        )
-                        .await?;
-                    }
-                }
-                Err(err) => {
-                    log::warn!("回放前获取最新块失败: {}", err);
-                }
-            }
-        }
-    }
-
     let source: Arc<dyn EventSource> = if sample_events == 0 {
-        build_live_event_source(config, &metadata)
+        build_live_event_source(config, &metadata, 0)
             .await
             .map_err(|err| anyhow!(err.to_string()))?
     } else {
@@ -278,6 +205,8 @@ fn build_mock_events(swap_events: u64) -> Result<Vec<EventEnvelope>, anyhow::Err
     events.push(EventEnvelope {
         kind: EventKind::PairCreated,
         block_number: 1,
+        block_hash: None,
+        block_timestamp: None,
         transaction_hash: H256::from_low_u64_be(1),
         log_index: 0,
         address: factory,
@@ -295,6 +224,8 @@ fn build_mock_events(swap_events: u64) -> Result<Vec<EventEnvelope>, anyhow::Err
     events.push(EventEnvelope {
         kind: EventKind::Mint,
         block_number: 2,
+        block_hash: None,
+        block_timestamp: None,
         transaction_hash: H256::from_low_u64_be(2),
         log_index: 0,
         address: pair,
@@ -308,6 +239,8 @@ fn build_mock_events(swap_events: u64) -> Result<Vec<EventEnvelope>, anyhow::Err
     events.push(EventEnvelope {
         kind: EventKind::Sync,
         block_number: 2,
+        block_hash: None,
+        block_timestamp: None,
         transaction_hash: H256::from_low_u64_be(2),
         log_index: 1,
         address: pair,
@@ -322,6 +255,8 @@ fn build_mock_events(swap_events: u64) -> Result<Vec<EventEnvelope>, anyhow::Err
         events.push(EventEnvelope {
             kind: EventKind::Swap,
             block_number: 3 + i,
+            block_hash: None,
+            block_timestamp: None,
             transaction_hash: H256::from_low_u64_be(10 + i),
             log_index: 0,
             address: pair,
@@ -337,6 +272,8 @@ fn build_mock_events(swap_events: u64) -> Result<Vec<EventEnvelope>, anyhow::Err
         events.push(EventEnvelope {
             kind: EventKind::Sync,
             block_number: 3 + i,
+            block_hash: None,
+            block_timestamp: None,
             transaction_hash: H256::from_low_u64_be(10 + i),
             log_index: 1,
             address: pair,
@@ -419,6 +356,7 @@ async fn build_subscription_metadata(
 async fn build_live_event_source(
     config: &AppConfig,
     metadata: &SubscriptionMetadata,
+    backfill_blocks: u64,
 ) -> Result<Arc<dyn EventSource>, EventListenerError> {
     let source_config = EthersEventSourceConfig {
         ws_endpoint: config.network.ws_endpoint.clone(),
@@ -426,7 +364,7 @@ async fn build_live_event_source(
         addresses: metadata.addresses.clone(),
         topics: metadata.topics.clone(),
         topic_kinds: metadata.topic_kinds.clone(),
-        backfill_blocks: config.network.event_backfill_blocks,
+        backfill_blocks,
         chunk_size: config.network.backfill_chunk_size.max(1),
         retry_interval: Duration::from_secs(config.network.ws_retry_secs.max(1)),
         channel_capacity: 2_048,
@@ -435,92 +373,6 @@ async fn build_live_event_source(
     };
     let source = EthersEventSource::connect(source_config).await?;
     Ok(source as Arc<dyn EventSource>)
-}
-
-async fn replay_events(
-    provider: Arc<Provider<Http>>,
-    router: Arc<DexEventRouter>,
-    metadata: &SubscriptionMetadata,
-    from_block: u64,
-    to_block: u64,
-    chunk_size: u64,
-) -> Result<()> {
-    if metadata.addresses.is_empty() || metadata.topics.is_empty() {
-        return Ok(());
-    }
-
-    let mut current = from_block;
-    let effective_chunk = chunk_size.max(1);
-
-    while current <= to_block {
-        let mut chunk = effective_chunk;
-        let mut finished_chunk = false;
-        while !finished_chunk {
-            let end = current
-                .saturating_add(chunk.saturating_sub(1))
-                .min(to_block);
-            let mut filter = Filter::new();
-            filter = filter.address(ValueOrArray::Array(metadata.addresses.clone()));
-            filter = filter.topic0(ValueOrArray::Array(metadata.topics.clone()));
-            filter = filter
-                .from_block(BlockNumber::Number(current.into()))
-                .to_block(BlockNumber::Number(end.into()));
-
-            match provider.get_logs(&filter).await {
-                Ok(logs) => {
-                    for log in logs {
-                        if log.removed.unwrap_or(false) {
-                            continue;
-                        }
-                        let kind = log
-                            .topics
-                            .get(0)
-                            .and_then(|topic| metadata.topic_kinds.get(topic))
-                            .cloned()
-                            .unwrap_or(EventKind::Unknown);
-                        let event = EventEnvelope {
-                            kind,
-                            block_number: log.block_number.unwrap_or_default().as_u64(),
-                            transaction_hash: log.transaction_hash.unwrap_or_default(),
-                            log_index: log.log_index.map(|idx| idx.as_u64()).unwrap_or(0),
-                            address: log.address,
-                            topics: log.topics.clone(),
-                            payload: Bytes::from(log.data.0.clone()),
-                        };
-
-                        if let Err(err) = router.dispatch(event).await {
-                            log::error!("历史回放事件失败: {}", err);
-                        }
-                    }
-                    current = end.saturating_add(1);
-                    finished_chunk = true;
-                }
-                Err(err) => {
-                    if chunk > 1 {
-                        chunk = chunk.saturating_div(2).max(1);
-                        log::warn!(
-                            "回放日志失败: {}，缩小 chunk 到 {}，范围 [{} - {}]",
-                            err,
-                            chunk,
-                            current,
-                            end
-                        );
-                    } else {
-                        log::error!(
-                            "回放日志失败且无法再缩小 chunk: 错误={}, 范围 [{} - {}]",
-                            err,
-                            current,
-                            end
-                        );
-                        current = end.saturating_add(1);
-                        finished_chunk = true;
-                    }
-                }
-            }
-        }
-    }
-
-    Ok(())
 }
 
 struct LoggingEventSink {
@@ -541,11 +393,21 @@ impl EventSink for LoggingEventSink {
             .get(&event.address)
             .cloned()
             .unwrap_or_else(|| "unknown".into());
+        let block_hash = event
+            .block_hash
+            .map(|h| format!("{:#x}", h))
+            .unwrap_or_else(|| "-".into());
+        let block_time = event
+            .block_timestamp
+            .map(|ts| ts.to_string())
+            .unwrap_or_else(|| "-".into());
         log::info!(
-            "接收到事件: dex={}, kind={:?}, block={}, tx={:#x}, log_index={}",
+            "接收到事件: dex={}, kind={:?}, block={}, hash={}, time={}, tx={:#x}, log_index={}",
             label,
             event.kind,
             event.block_number,
+            block_hash,
+            block_time,
             event.transaction_hash,
             event.log_index
         );
@@ -555,13 +417,200 @@ impl EventSink for LoggingEventSink {
 
 struct RouterSink {
     router: Arc<DexEventRouter>,
+    repository: Arc<dyn PoolRepository>,
+    snapshot_store: Option<Arc<dyn SnapshotStore>>,
+    v2_tokens: Option<HashMap<Address, (Asset, Asset)>>,
+    v3_pools: HashMap<Address, V3BootstrapPool>,
+    fetcher: Option<Arc<OnChainStateFetcher<Provider<Http>>>>,
+    pool_labels: Arc<HashMap<Address, String>>,
+    chain_id: u64,
+}
+
+impl RouterSink {
+    fn new(
+        router: Arc<DexEventRouter>,
+        repository: Arc<dyn PoolRepository>,
+        snapshot_store: Option<Arc<dyn SnapshotStore>>,
+        v2_tokens: Option<HashMap<Address, (Asset, Asset)>>,
+        v3_pools: HashMap<Address, V3BootstrapPool>,
+        fetcher: Option<Arc<OnChainStateFetcher<Provider<Http>>>>,
+        pool_labels: Arc<HashMap<Address, String>>,
+        chain_id: u64,
+    ) -> Self {
+        Self {
+            router,
+            repository,
+            snapshot_store,
+            v2_tokens,
+            v3_pools,
+            fetcher,
+            pool_labels,
+            chain_id,
+        }
+    }
+
+    async fn ensure_pool_initialized(
+        &self,
+        event: &EventEnvelope,
+    ) -> Result<(), EventListenerError> {
+        // PairCreated 会由处理器自行建立初始状态。
+        if event.kind == EventKind::PairCreated {
+            return Ok(());
+        }
+
+        match self.detect_pool_type(event) {
+            Some(PoolType::PancakeV2) => self.ensure_v2_pool(event).await,
+            Some(PoolType::PancakeV3) => self.ensure_v3_pool(event).await,
+            _ => Ok(()),
+        }
+    }
+
+    fn detect_pool_type(&self, event: &EventEnvelope) -> Option<PoolType> {
+        if let Some(label) = self.pool_labels.get(&event.address) {
+            return match label.as_str() {
+                "pancake_v2" => Some(PoolType::PancakeV2),
+                "pancake_v3" => Some(PoolType::PancakeV3),
+                _ => None,
+            };
+        }
+        if let Some(tokens) = &self.v2_tokens {
+            if tokens.contains_key(&event.address) {
+                return Some(PoolType::PancakeV2);
+            }
+        }
+        if self.v3_pools.contains_key(&event.address) {
+            return Some(PoolType::PancakeV3);
+        }
+        None
+    }
+
+    async fn ensure_v2_pool(&self, event: &EventEnvelope) -> Result<(), EventListenerError> {
+        let id = PoolIdentifier {
+            chain_namespace: ChainNamespace::Evm,
+            chain_id: self.chain_id,
+            dex: PoolType::PancakeV2.label(),
+            address: event.address,
+            pool_type: PoolType::PancakeV2,
+        };
+        if self
+            .repository
+            .get(&id)
+            .await
+            .map_err(to_internal)?
+            .is_some()
+        {
+            return Ok(());
+        }
+        let fetcher = match &self.fetcher {
+            Some(fetcher) => fetcher.clone(),
+            None => {
+                log::warn!(
+                    "缺少 HTTP Provider，无法为池子 {:#x} 补齐状态",
+                    event.address
+                );
+                return Ok(());
+            }
+        };
+        let (token0, token1) = match &self.v2_tokens {
+            Some(map) => match map.get(&event.address) {
+                Some(pair) => pair.clone(),
+                None => {
+                    log::warn!("未找到池子 {:#x} 的 token 配置，跳过初始化", event.address);
+                    return Ok(());
+                }
+            },
+            None => {
+                log::warn!(
+                    "未配置 Pancake V2 token 信息，跳过池子 {:#x} 初始化",
+                    event.address
+                );
+                return Ok(());
+            }
+        };
+        let pool_info = V2BootstrapPool {
+            pool: event.address,
+            token0,
+            token1,
+        };
+        let block = event.block_number.checked_sub(1);
+        let snapshot = fetcher
+            .fetch_v2_snapshot_at(&pool_info, block)
+            .await
+            .map_err(to_internal)?;
+        self.repository
+            .upsert(snapshot.clone())
+            .await
+            .map_err(to_internal)?;
+        if let Some(store) = &self.snapshot_store {
+            if let Err(err) = store.save(&snapshot).await {
+                log::warn!("写入 V2 快照失败: pool={:#x}, 错误: {}", event.address, err);
+            }
+        }
+        Ok(())
+    }
+
+    async fn ensure_v3_pool(&self, event: &EventEnvelope) -> Result<(), EventListenerError> {
+        let id = PoolIdentifier {
+            chain_namespace: ChainNamespace::Evm,
+            chain_id: self.chain_id,
+            dex: PoolType::PancakeV3.label(),
+            address: event.address,
+            pool_type: PoolType::PancakeV3,
+        };
+        if self
+            .repository
+            .get(&id)
+            .await
+            .map_err(to_internal)?
+            .is_some()
+        {
+            return Ok(());
+        }
+        let fetcher = match &self.fetcher {
+            Some(fetcher) => fetcher.clone(),
+            None => {
+                log::warn!(
+                    "缺少 HTTP Provider，无法为 V3 池子 {:#x} 补齐状态",
+                    event.address
+                );
+                return Ok(());
+            }
+        };
+        let pool_info = match self.v3_pools.get(&event.address) {
+            Some(info) => info.clone(),
+            None => {
+                log::warn!("未找到 V3 池子 {:#x} 的配置，跳过初始化", event.address);
+                return Ok(());
+            }
+        };
+        let block = event.block_number.checked_sub(1);
+        let snapshot = fetcher
+            .fetch_v3_snapshot_at(&pool_info, block)
+            .await
+            .map_err(to_internal)?;
+        self.repository
+            .upsert(snapshot.clone())
+            .await
+            .map_err(to_internal)?;
+        if let Some(store) = &self.snapshot_store {
+            if let Err(err) = store.save(&snapshot).await {
+                log::warn!("写入 V3 快照失败: pool={:#x}, 错误: {}", event.address, err);
+            }
+        }
+        Ok(())
+    }
 }
 
 #[async_trait]
 impl EventSink for RouterSink {
     async fn handle_event(&self, event: EventEnvelope) -> Result<(), EventListenerError> {
+        self.ensure_pool_initialized(&event).await?;
         self.router.dispatch(event).await
     }
+}
+
+fn to_internal<E: ToString>(err: E) -> EventListenerError {
+    EventListenerError::Internal(err.to_string())
 }
 
 #[cfg(test)]

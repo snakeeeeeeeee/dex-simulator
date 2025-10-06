@@ -273,6 +273,8 @@ mod tests {
         let event = EventEnvelope {
             kind: crate::event::EventKind::Swap,
             block_number: 1,
+            block_hash: None,
+            block_timestamp: None,
             transaction_hash: H256::zero(),
             log_index: 0,
             address: pair,

@@ -262,12 +262,12 @@ async fn prepare_simulation(
         }
     }
 
-    let path = build_graph_path(&repo, &identifier, 4).await?;
+    let path = build_graph_path(repo.clone(), &identifier, 4).await?;
     Ok((identifier, repo, path))
 }
 
 async fn build_graph_path(
-    repo: &Arc<dyn PoolRepository>,
+    repo: Arc<dyn PoolRepository>,
     identifier: &PoolIdentifier,
     max_hops: usize,
 ) -> Result<Vec<PathLeg>, SimulationError> {

@@ -35,6 +35,8 @@ pub enum EventKind {
 pub struct EventEnvelope {
     pub kind: EventKind,
     pub block_number: u64,
+    pub block_hash: Option<H256>,
+    pub block_timestamp: Option<u64>,
     pub transaction_hash: H256,
     pub log_index: u64,
     pub address: Address,
@@ -148,6 +150,8 @@ impl LocalEventListener {
         json!({
             "kind": format!("{:?}", event.kind),
             "block_number": event.block_number,
+            "block_hash": event.block_hash.map(|h| format!("{:#x}", h)),
+            "block_timestamp": event.block_timestamp,
             "transaction_hash": format!("{:#x}", event.transaction_hash),
             "log_index": event.log_index,
             "address": format!("{:#x}", event.address),

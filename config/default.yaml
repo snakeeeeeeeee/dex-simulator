@@ -2,9 +2,9 @@ network:
   chain_id: 56
   ws_endpoint: ""
   http_endpoint: ""
-  event_backfill_blocks: 20
+  event_backfill_blocks: 1
   ws_retry_secs: 5
-  backfill_chunk_size: 100
+  backfill_chunk_size: 1
 logging:
   config_file: null
   level: "info"

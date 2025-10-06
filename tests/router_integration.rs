@@ -44,6 +44,8 @@ async fn test_router_dispatch_v2_and_v3() {
     let envelope_v2 = EventEnvelope {
         kind: EventKind::Swap,
         block_number: 1,
+        block_hash: None,
+        block_timestamp: None,
         transaction_hash: Default::default(),
         log_index: 0,
         address: addr_v2,
@@ -53,6 +55,8 @@ async fn test_router_dispatch_v2_and_v3() {
     let envelope_v3 = EventEnvelope {
         kind: EventKind::Swap,
         block_number: 1,
+        block_hash: None,
+        block_timestamp: None,
         transaction_hash: Default::default(),
         log_index: 0,
         address: addr_v3,

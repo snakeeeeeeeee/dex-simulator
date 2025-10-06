@@ -4,7 +4,7 @@ use std::sync::Arc;
 use std::time::{SystemTime, UNIX_EPOCH};
 
 use ethers::providers::{Http, Middleware, Provider, Ws};
-use ethers::types::{Address, BlockNumber, Filter, Log, ValueOrArray, H256};
+use ethers::types::{Address, BlockId, BlockNumber, Filter, Log, ValueOrArray, H256};
 use futures_util::StreamExt;
 use tokio::sync::{mpsc, Mutex};
 use tokio::task::JoinHandle;
@@ -80,6 +80,7 @@ impl EthersEventSource {
             event_counter: AtomicU64::new(0),
             last_event_ts: AtomicU64::new(0),
             ws_reconnects: AtomicU64::new(0),
+            block_meta: Mutex::new(HashMap::new()),
         });
         let source = Arc::new(Self {
             inner: inner.clone(),
@@ -153,6 +154,7 @@ struct Inner {
     event_counter: AtomicU64,
     last_event_ts: AtomicU64,
     ws_reconnects: AtomicU64,
+    block_meta: Mutex<HashMap<u64, (Option<H256>, Option<u64>)>>,
 }
 
 impl Inner {
@@ -296,26 +298,68 @@ impl Inner {
         }
     }
 
-    async fn publish_log(&self, log: Log) -> Result<(), EventListenerError> {
-        if log.removed.unwrap_or(false) {
-            return Ok(());
-        }
+    async fn build_envelope(&self, log: Log) -> EventEnvelope {
         let block_number = log.block_number.unwrap_or_default().as_u64();
+        let (block_hash, block_timestamp) = self.block_meta(block_number, log.block_hash).await;
         let kind = log
             .topics
             .get(0)
             .and_then(|topic| self.config.topic_kinds.get(topic))
             .cloned()
             .unwrap_or(EventKind::Unknown);
-        let envelope = EventEnvelope {
+        EventEnvelope {
             kind,
             block_number,
+            block_hash,
+            block_timestamp,
             transaction_hash: log.transaction_hash.unwrap_or_default(),
             log_index: log.log_index.unwrap_or_default().as_u64(),
             address: log.address,
             topics: log.topics.clone(),
             payload: log.data.clone().into(),
-        };
+        }
+    }
+
+    async fn block_meta(
+        &self,
+        block_number: u64,
+        block_hash: Option<H256>,
+    ) -> (Option<H256>, Option<u64>) {
+        {
+            let cache = self.block_meta.lock().await;
+            if let Some((cached_hash, ts)) = cache.get(&block_number) {
+                let hash = block_hash.or(*cached_hash);
+                return (hash, *ts);
+            }
+        }
+
+        let mut hash = block_hash;
+        let mut timestamp = None;
+        let block_id = BlockId::Number(BlockNumber::Number(block_number.into()));
+        match self.http.get_block(block_id).await {
+            Ok(Some(block)) => {
+                if hash.is_none() {
+                    hash = block.hash;
+                }
+                timestamp = Some(block.timestamp.as_u64());
+            }
+            Ok(None) => {}
+            Err(err) => {
+                log::warn!("获取区块元信息失败: block={}, 错误={}", block_number, err);
+            }
+        }
+
+        let mut cache = self.block_meta.lock().await;
+        cache.insert(block_number, (hash, timestamp));
+        (hash, timestamp)
+    }
+
+    async fn publish_log(&self, log: Log) -> Result<(), EventListenerError> {
+        if log.removed.unwrap_or(false) {
+            return Ok(());
+        }
+        let block_number = log.block_number.unwrap_or_default().as_u64();
+        let envelope = self.build_envelope(log).await;
         self.last_published_block
             .store(block_number, Ordering::SeqCst);
         self.sender

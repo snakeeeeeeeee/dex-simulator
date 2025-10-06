@@ -74,6 +74,8 @@ mod tests {
         let envelope = EventEnvelope {
             kind: EventKind::Unknown,
             block_number: 1,
+            block_hash: None,
+            block_timestamp: None,
             transaction_hash: Default::default(),
             log_index: 0,
             address: Address::repeat_byte(0x11),
