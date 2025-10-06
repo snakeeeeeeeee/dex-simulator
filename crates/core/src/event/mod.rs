@@ -128,13 +128,13 @@ impl LocalEventListener {
                 Some(event) => {
                     let event_clone = event.clone();
                     if let Err(err) = self.dispatch(event).await {
-                        log::error!(
+                        tracing::error!(
                             target: "dex_simulator_core::event",
                             "事件分发失败: {err}; event: {}",
                             serde_json::to_string_pretty(&Self::event_json(&event_clone))
                                 .unwrap_or_else(|_| "<serde_json_error>".to_string())
                         );
-                        log::error!(target: "dex_simulator_core::event", "错误详情: {err:?}");
+                        tracing::error!(target: "dex_simulator_core::event", "错误详情: {err:?}");
                     }
                 }
                 None => {
@@ -165,16 +165,16 @@ impl LocalEventListener {
             match source.next_event().await {
                 Ok(Some(event)) => {
                     if let Err(err) = self.publish(event).await {
-                        log::error!("写入事件失败: {}", err);
+                        tracing::error!("写入事件失败: {}", err);
                     }
                 }
                 Ok(None) => {
                     sleep(Duration::from_millis(200)).await;
                 }
                 Err(err) => {
-                    log::warn!("事件源异常: {}，尝试重连", err);
+                    tracing::warn!("事件源异常: {}，尝试重连", err);
                     if let Err(retry_err) = source.handle_disconnect().await {
-                        log::error!("事件源重连失败: {}", retry_err);
+                        tracing::error!("事件源重连失败: {}", retry_err);
                         sleep(Duration::from_secs(1)).await;
                     }
                 }
@@ -185,12 +185,12 @@ impl LocalEventListener {
     async fn stop_handles(&self) {
         if let Some(handle) = self.pump_handle.lock().await.take() {
             if let Err(err) = handle.await {
-                log::warn!("Pump 任务结束异常: {}", err);
+                tracing::warn!("Pump 任务结束异常: {}", err);
             }
         }
         if let Some(handle) = self.fetch_handle.lock().await.take() {
             if let Err(err) = handle.await {
-                log::warn!("Fetch 任务结束异常: {}", err);
+                tracing::warn!("Fetch 任务结束异常: {}", err);
             }
         }
     }
@@ -200,7 +200,7 @@ impl LocalEventListener {
 impl EventListener for Arc<LocalEventListener> {
     async fn start(&self) -> Result<(), EventListenerError> {
         if self.running.swap(true, Ordering::SeqCst) {
-            log::warn!("事件监听器已在运行，忽略重复启动");
+            tracing::warn!("事件监听器已在运行，忽略重复启动");
             return Ok(());
         }
 
@@ -217,7 +217,7 @@ impl EventListener for Arc<LocalEventListener> {
             });
             *self.fetch_handle.lock().await = Some(fetch_handle);
         } else {
-            log::info!("未配置事件源，监听器仅处理手工注入事件");
+            tracing::info!("未配置事件源，监听器仅处理手工注入事件");
         }
 
         Ok(())

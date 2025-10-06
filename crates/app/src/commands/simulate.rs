@@ -30,7 +30,7 @@ pub async fn simulate_swap(config: &AppConfig, pool_id: String, amount: u128) ->
             println!("{}", serde_json::to_string_pretty(&output)?);
         }
         Err(err) => {
-            log::error!("模拟失败: {}", err);
+            tracing::error!("模拟失败: {}", err);
         }
     }
     Ok(())
@@ -43,7 +43,7 @@ pub async fn simulate_swap_v3(amount: u128, reverse: bool) -> Result<()> {
             println!("{}", serde_json::to_string_pretty(&output)?);
         }
         Err(err) => {
-            log::error!("V3 模拟失败: {}", err);
+            tracing::error!("V3 模拟失败: {}", err);
         }
     }
     Ok(())
@@ -87,7 +87,7 @@ pub async fn bench_swap(
                 last_result = Some(result);
             }
             Err(err) => {
-                log::warn!("基准测试迭代失败: {}", err);
+                tracing::warn!("基准测试迭代失败: {}", err);
             }
         }
     }
@@ -258,7 +258,7 @@ async fn prepare_simulation(
                 PancakeV2PoolState::new(pool_id.clone(), token0.clone(), token1.clone());
             state.set_reserves(1_000_000_000_000_000_000u128, 500_000_000_000_000_000u128);
             repo.upsert(state.to_snapshot()?).await?;
-            log::info!("使用示例池子进行模拟: {:?}", pool_id);
+            tracing::info!("使用示例池子进行模拟: {:?}", pool_id);
         }
     }
 

@@ -35,11 +35,18 @@ pub struct NetworkConfig {
     pub backfill_chunk_size: u64,
 }
 
-/// 日志配置，兼容 log4rs。
+/// 日志配置，可通过 tracing EnvFilter 调节输出等级。
 #[derive(Debug, Clone, Deserialize)]
 pub struct LoggingConfig {
     pub config_file: Option<String>,
+    #[serde(default = "default_log_level")]
     pub level: String,
+    #[serde(default = "default_log_directory")]
+    pub directory: String,
+    #[serde(default = "default_log_size_mb")]
+    pub max_size_mb: u64,
+    #[serde(default = "default_log_retention_hours")]
+    pub retention_hours: u64,
 }
 
 /// 运行时配置：并发度、快照等策略。
@@ -100,6 +107,22 @@ const fn default_backfill_chunk_size() -> u64 {
 
 fn default_http_bind() -> String {
     "127.0.0.1:8080".to_string()
+}
+
+fn default_log_level() -> String {
+    "info".to_string()
+}
+
+fn default_log_directory() -> String {
+    "logs".to_string()
+}
+
+const fn default_log_size_mb() -> u64 {
+    100
+}
+
+const fn default_log_retention_hours() -> u64 {
+    24
 }
 
 /// 服务编排配置。

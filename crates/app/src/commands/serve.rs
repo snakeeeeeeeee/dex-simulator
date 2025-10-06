@@ -91,7 +91,7 @@ type HttpResult<T> = std::result::Result<T, HttpError>;
 
 pub async fn serve(config: &AppConfig, dry_run: bool) -> Result<()> {
     if dry_run {
-        log::info!("[dry-run] 服务未真正启动");
+        tracing::info!("[dry-run] 服务未真正启动");
         return Ok(());
     }
 
@@ -101,12 +101,12 @@ pub async fn serve(config: &AppConfig, dry_run: bool) -> Result<()> {
     let metrics_enabled = config.services.metrics.enabled;
 
     if !listener_enabled && !http_enabled && !metrics_enabled {
-        log::warn!("未启用任何服务组件，直接退出");
+        tracing::warn!("未启用任何服务组件，直接退出");
         return Ok(());
     }
 
     if metrics_enabled {
-        log::warn!("Metrics 服务尚未实现，暂不启动");
+        tracing::warn!("Metrics 服务尚未实现，暂不启动");
     }
 
     let shared = if listener_enabled || http_enabled {
@@ -135,16 +135,16 @@ pub async fn serve(config: &AppConfig, dry_run: bool) -> Result<()> {
         handles.push(tokio::spawn(run_http_server(cfg, shared_clone, rx)));
     }
 
-    log::info!("服务组件启动完成，按 Ctrl+C 退出");
+    tracing::info!("服务组件启动完成，按 Ctrl+C 退出");
     tokio::signal::ctrl_c().await?;
-    log::info!("收到 Ctrl+C，开始关闭服务组件");
+    tracing::info!("收到 Ctrl+C，开始关闭服务组件");
     let _ = shutdown_tx.send(true);
 
     for handle in handles {
         match handle.await {
             Ok(Ok(())) => {}
-            Ok(Err(err)) => log::error!("组件退出异常: {}", err),
-            Err(err) => log::error!("组件任务 Join 失败: {}", err),
+            Ok(Err(err)) => tracing::error!("组件退出异常: {}", err),
+            Err(err) => tracing::error!("组件任务 Join 失败: {}", err),
         }
     }
 
@@ -208,11 +208,11 @@ async fn run_http_server(
 
     let app = Router::new()
         .route(
-            "/simulate/:chain/pancake-v2",
+            "/simulate/{chain}/pancake-v2",
             post(simulate_pancake_v2_handler),
         )
         .route(
-            "/simulate/:chain/pancake-v3",
+            "/simulate/{chain}/pancake-v3",
             post(simulate_pancake_v3_handler),
         )
         .with_state(state);
@@ -220,7 +220,7 @@ async fn run_http_server(
     let listener = TcpListener::bind(addr)
         .await
         .map_err(|err| anyhow!("绑定 HTTP 地址失败: {}", err))?;
-    log::info!("HTTP 服务启动: http://{}", addr);
+    tracing::info!("HTTP 服务启动: http://{}", addr);
     axum::serve(listener, app)
         .with_graceful_shutdown(async move {
             let _ = shutdown.changed().await;

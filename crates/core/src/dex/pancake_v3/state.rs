@@ -153,7 +153,7 @@ impl PancakeV3PoolState {
                 amount0, amount1, ..
             } => {
                 if let Err(err) = self.sub_reserve(*amount0, *amount1) {
-                    log::warn!(
+                    tracing::warn!(
                         "Collect 扣减失败: pool={:#x}, 错误: {}",
                         self.id.address,
                         err

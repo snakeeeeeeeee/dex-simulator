@@ -11,6 +11,7 @@ async-trait = { workspace = true }
 clap = { workspace = true }
 dex-simulator-core = { path = "../core" }
 log = { workspace = true }
+tracing = { workspace = true }
 serde_yaml = { workspace = true }
 tokio = { workspace = true }
 ethers = { workspace = true }

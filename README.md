@@ -18,7 +18,7 @@
 核心库已预置以下模块骨架：
 
 - `config`：加载与管理全局配置，支持 YAML/JSON/TOML。
-- `logging`：基于 log4rs 的日志初始化，默认输出到控制台。
+- `logging`：基于 tracing 的日志初始化，默认输出到控制台并写入 `logs/info.log`、`logs/error.log`（按天与 100MB 滚动）。
 - `event`：事件监听与回放接口定义。
 - `state`：池子状态抽象与快照结构。
 - `simulation`：Swap 模拟请求/结果与计算器接口。

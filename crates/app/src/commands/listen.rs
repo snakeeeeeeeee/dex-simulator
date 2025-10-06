@@ -97,7 +97,7 @@ pub async fn listen_with_state(
     let provider = match Provider::<Http>::try_from(config.network.http_endpoint.as_str()) {
         Ok(p) => Some(Arc::new(p)),
         Err(err) => {
-            log::warn!("创建 HTTP Provider 失败，后续无法按需补齐状态: {}", err);
+            tracing::warn!("创建 HTTP Provider 失败，后续无法按需补齐状态: {}", err);
             None
         }
     };
@@ -173,7 +173,7 @@ pub async fn listen_with_state(
 
     listener.clone().start().await?;
     if sample_events == 0 {
-        log::info!("实时监听已启动，按 Ctrl+C 结束...");
+        tracing::info!("实时监听已启动，按 Ctrl+C 结束...");
         if let Some(mut rx) = shutdown {
             let _ = rx.changed().await;
         } else {
@@ -189,7 +189,7 @@ pub async fn listen_with_state(
 
     let snapshots = repository.list().await?;
     for snapshot in snapshots {
-        log::info!("监听结束，池子状态: {:?}", snapshot);
+        tracing::info!("监听结束，池子状态: {:?}", snapshot);
     }
     Ok(())
 }
@@ -401,7 +401,7 @@ impl EventSink for LoggingEventSink {
             .block_timestamp
             .map(|ts| ts.to_string())
             .unwrap_or_else(|| "-".into());
-        log::info!(
+        tracing::info!(
             "接收到事件: dex={}, kind={:?}, block={}, hash={}, time={}, tx={:#x}, log_index={}",
             label,
             event.kind,
@@ -504,7 +504,7 @@ impl RouterSink {
         let fetcher = match &self.fetcher {
             Some(fetcher) => fetcher.clone(),
             None => {
-                log::warn!(
+                tracing::warn!(
                     "缺少 HTTP Provider，无法为池子 {:#x} 补齐状态",
                     event.address
                 );
@@ -515,12 +515,12 @@ impl RouterSink {
             Some(map) => match map.get(&event.address) {
                 Some(pair) => pair.clone(),
                 None => {
-                    log::warn!("未找到池子 {:#x} 的 token 配置，跳过初始化", event.address);
+                    tracing::warn!("未找到池子 {:#x} 的 token 配置，跳过初始化", event.address);
                     return Ok(());
                 }
             },
             None => {
-                log::warn!(
+                tracing::warn!(
                     "未配置 Pancake V2 token 信息，跳过池子 {:#x} 初始化",
                     event.address
                 );
@@ -543,7 +543,7 @@ impl RouterSink {
             .map_err(to_internal)?;
         if let Some(store) = &self.snapshot_store {
             if let Err(err) = store.save(&snapshot).await {
-                log::warn!("写入 V2 快照失败: pool={:#x}, 错误: {}", event.address, err);
+                tracing::warn!("写入 V2 快照失败: pool={:#x}, 错误: {}", event.address, err);
             }
         }
         Ok(())
@@ -569,7 +569,7 @@ impl RouterSink {
         let fetcher = match &self.fetcher {
             Some(fetcher) => fetcher.clone(),
             None => {
-                log::warn!(
+                tracing::warn!(
                     "缺少 HTTP Provider，无法为 V3 池子 {:#x} 补齐状态",
                     event.address
                 );
@@ -579,7 +579,7 @@ impl RouterSink {
         let pool_info = match self.v3_pools.get(&event.address) {
             Some(info) => info.clone(),
             None => {
-                log::warn!("未找到 V3 池子 {:#x} 的配置，跳过初始化", event.address);
+                tracing::warn!("未找到 V3 池子 {:#x} 的配置，跳过初始化", event.address);
                 return Ok(());
             }
         };
@@ -594,7 +594,7 @@ impl RouterSink {
             .map_err(to_internal)?;
         if let Some(store) = &self.snapshot_store {
             if let Err(err) = store.save(&snapshot).await {
-                log::warn!("写入 V3 快照失败: pool={:#x}, 错误: {}", event.address, err);
+                tracing::warn!("写入 V3 快照失败: pool={:#x}, 错误: {}", event.address, err);
             }
         }
         Ok(())

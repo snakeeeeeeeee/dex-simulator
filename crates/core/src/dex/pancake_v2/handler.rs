@@ -96,7 +96,7 @@ impl PancakeV2EventHandler {
                     .should_track_pool(&[token0_asset.address, token1_asset.address])
                     .await
                 {
-                    log::info!(
+                    tracing::info!(
                         "池子不在白名单连通图中，忽略: pair={:?}, token0={:?}, token1={:?}",
                         pair,
                         token0,
@@ -136,7 +136,7 @@ impl PancakeV2EventHandler {
                         .map_err(|err| EventListenerError::Internal(err.to_string()))?;
                     self.persist_snapshot(snapshot).await
                 } else {
-                    log::warn!("未找到池子状态，忽略事件 pair={:?}", pair);
+                    tracing::warn!("未找到池子状态，忽略事件 pair={:?}", pair);
                     Ok(())
                 }
             }
@@ -214,7 +214,7 @@ impl EventSink for PancakeV2EventHandler {
             Ok(parsed) => self.handle_parsed_event(parsed).await,
             Err(PancakeV2EventError::Unsupported) => Ok(()),
             Err(err) => {
-                log::warn!("PancakeV2 事件解析失败: {}", err);
+                tracing::warn!("PancakeV2 事件解析失败: {}", err);
                 Err(EventListenerError::Decode(err.to_string()))
             }
         }

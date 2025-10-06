@@ -177,7 +177,7 @@ impl Inner {
             let latest = match self.http.get_block_number().await {
                 Ok(number) => number.as_u64(),
                 Err(err) => {
-                    log::warn!("HTTP 回放获取最新区块失败: {}", err);
+                    tracing::warn!("HTTP 回放获取最新区块失败: {}", err);
                     sleep(self.config.retry_interval).await;
                     continue;
                 }
@@ -189,7 +189,7 @@ impl Inner {
             let backfill_blocks = self.config.backfill_blocks.min(latest);
             let start = latest.saturating_sub(backfill_blocks);
             let chunk = self.config.chunk_size.max(1);
-            log::info!(
+            tracing::info!(
                 "开始回放日志: from_block={}, to_block={}, chunk={}",
                 start,
                 latest,
@@ -209,7 +209,7 @@ impl Inner {
                     Ok(logs) => {
                         for log in logs {
                             if let Err(err) = self.publish_log(log).await {
-                                log::warn!("回放日志发送失败: {}", err);
+                                tracing::warn!("回放日志发送失败: {}", err);
                                 if self.shutdown.load(Ordering::SeqCst) {
                                     break;
                                 }
@@ -217,7 +217,7 @@ impl Inner {
                         }
                     }
                     Err(err) => {
-                        log::warn!(
+                        tracing::warn!(
                             "回放日志请求失败: from={}, to={}, 错误: {}",
                             current,
                             end,
@@ -250,19 +250,19 @@ impl Inner {
         while !self.shutdown.load(Ordering::SeqCst) {
             let attempt = self.ws_reconnects.fetch_add(1, Ordering::SeqCst);
             if attempt > 0 {
-                log::info!("尝试重连 WebSocket，第 {} 次", attempt);
+                tracing::info!("尝试重连 WebSocket，第 {} 次", attempt);
             }
             let mut connected = false;
             match Provider::<Ws>::connect(self.config.ws_endpoint.as_str()).await {
                 Ok(provider) => {
                     connected = true;
                     current_retry = base_retry;
-                    log::info!("WebSocket 连接成功: {}", self.config.ws_endpoint);
+                    tracing::info!("WebSocket 连接成功: {}", self.config.ws_endpoint);
                     match provider.subscribe_logs(&self.base_filter()).await {
                         Ok(mut stream) => {
                             while let Some(log) = stream.next().await {
                                 if let Err(err) = self.publish_log(log).await {
-                                    log::warn!("实时日志发送失败: {}", err);
+                                    tracing::warn!("实时日志发送失败: {}", err);
                                     if self.shutdown.load(Ordering::SeqCst) {
                                         break;
                                     }
@@ -271,12 +271,12 @@ impl Inner {
                         }
                         Err(err) => {
                             connected = false;
-                            log::error!("日志订阅失败: {}", err);
+                            tracing::error!("日志订阅失败: {}", err);
                         }
                     }
                 }
                 Err(err) => {
-                    log::error!("WebSocket 连接失败: {}", err);
+                    tracing::error!("WebSocket 连接失败: {}", err);
                 }
             }
 
@@ -285,7 +285,7 @@ impl Inner {
             }
 
             let wait = current_retry;
-            log::info!("WebSocket 已断开，{} 秒后重试", wait.as_secs().max(1));
+            tracing::info!("WebSocket 已断开，{} 秒后重试", wait.as_secs().max(1));
             sleep(wait).await;
             if connected {
                 current_retry = base_retry;
@@ -345,7 +345,7 @@ impl Inner {
             }
             Ok(None) => {}
             Err(err) => {
-                log::warn!("获取区块元信息失败: block={}, 错误={}", block_number, err);
+                tracing::warn!("获取区块元信息失败: block={}, 错误={}", block_number, err);
             }
         }
 
@@ -380,7 +380,7 @@ impl Inner {
         };
 
         if self.config.warn_delay_ms > 0 && interval_ms > self.config.warn_delay_ms {
-            log::warn!(
+            tracing::warn!(
                 "事件延迟告警: 距离上一事件 {} ms, 最新区块 {}",
                 interval_ms,
                 block_number
@@ -390,7 +390,7 @@ impl Inner {
         {
             let last_block = self.last_published_block.load(Ordering::SeqCst);
             let reconnects = self.ws_reconnects.load(Ordering::SeqCst);
-            log::info!(
+            tracing::info!(
                 "事件统计: 累计 {} 条, 最近间隔 {} ms, 最新区块 {}, 重连次数 {}",
                 count,
                 interval_ms,

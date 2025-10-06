@@ -158,7 +158,7 @@ pub fn parse_address_list(list: Option<&Vec<String>>) -> Option<Vec<Address>> {
         for item in items {
             match Address::from_str(item) {
                 Ok(addr) => result.push(addr),
-                Err(err) => log::warn!("无效地址 {}: {}", item, err),
+                Err(err) => tracing::warn!("无效地址 {}: {}", item, err),
             }
         }
     }

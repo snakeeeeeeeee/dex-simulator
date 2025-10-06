@@ -11,10 +11,10 @@ pub async fn dump_pool_state(config: &AppConfig, pool_id: String) -> Result<()> 
     let store = FileSnapshotStore::new(&config.runtime.snapshot_path);
     match store.load(&identifier).await? {
         Some(snapshot) => {
-            log::info!("读取快照成功: {:?}", snapshot);
+            tracing::info!("读取快照成功: {:?}", snapshot);
         }
         None => {
-            log::warn!("未找到池子状态，输入: {}", pool_id);
+            tracing::warn!("未找到池子状态，输入: {}", pool_id);
         }
     }
     Ok(())

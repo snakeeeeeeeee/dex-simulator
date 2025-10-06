@@ -8,6 +8,9 @@ network:
 logging:
   config_file: null
   level: "info"
+  directory: "./logs"
+  max_size_mb: 100
+  retention_hours: 24
 runtime:
   max_concurrency: 8
   snapshot_path: "./data/snapshots"

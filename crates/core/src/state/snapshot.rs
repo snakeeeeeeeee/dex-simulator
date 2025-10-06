@@ -94,7 +94,7 @@ impl SnapshotStore for FileSnapshotStore {
         let serialized = match serde_yaml::to_string(snapshot) {
             Ok(data) => data,
             Err(err) => {
-                log::warn!(
+                tracing::warn!(
                     "快照序列化失败, pool={:#x}, 错误: {}",
                     snapshot.id.address,
                     err
@@ -161,7 +161,7 @@ impl SnapshotStore for FileSnapshotStore {
                     }
                 }
                 Err(err) => {
-                    log::warn!("读取快照文件失败: {:?}, 错误: {}", path, err);
+                    tracing::warn!("读取快照文件失败: {:?}, 错误: {}", path, err);
                 }
             }
         }

@@ -89,7 +89,7 @@ impl<M: Middleware> OnChainStateFetcher<M> {
         let total_supply = match total_supply_call.call().await {
             Ok(supply) => Some(u256_to_u128(supply)?),
             Err(err) => {
-                log::warn!(
+                tracing::warn!(
                     "获取 V2 totalSupply 失败: pool={:#x}, 错误: {}",
                     pool.pool,
                     err
