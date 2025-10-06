@@ -124,6 +124,12 @@ pub async fn listen_with_state(
 
     let mut router_inner = DexEventRouter::new();
     router_inner.register(handler_v2.clone());
+    tracing::info!(
+        target: "dex_simulator_cli::commands::listen",
+        "PancakeSwap V2 监听器已启用: chain_id={}, bootstrap池子={} 个",
+        config.network.chain_id,
+        v2_bootstrap.len()
+    );
 
     if !v3_bootstrap.is_empty() {
         let handler_v3 = PancakeV3EventHandler::new(
@@ -138,6 +144,17 @@ pub async fn listen_with_state(
         );
         let handler_arc = Arc::new(handler_v3);
         router_inner.register(handler_arc);
+        tracing::info!(
+            target: "dex_simulator_cli::commands::listen",
+            "PancakeSwap V3 监听器已启用: chain_id={}, bootstrap池子={} 个",
+            config.network.chain_id,
+            v3_bootstrap.len()
+        );
+    } else {
+        tracing::info!(
+            target: "dex_simulator_cli::commands::listen",
+            "未启用 PancakeSwap V3 监听: 未配置 bootstrap 池子"
+        );
     }
 
     let router = Arc::new(router_inner);

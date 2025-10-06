@@ -9,12 +9,12 @@ use std::{
 use chrono::Local;
 use log::LevelFilter;
 use once_cell::sync::OnceCell;
-use tracing::{subscriber, Level};
+use tracing::{subscriber, Level, Metadata};
 use tracing_log::LogTracer;
 use tracing_subscriber::{
-    filter::{filter_fn, EnvFilter, LevelFilter as TracingLevelFilter},
+    filter::EnvFilter,
     fmt::{self, format::Writer, time::FormatTime, writer::MakeWriter},
-    layer::{Layer, SubscriberExt},
+    layer::SubscriberExt,
     registry,
 };
 
@@ -66,6 +66,8 @@ pub fn init_logging(config: &LoggingConfig) -> Result<(), LogInitError> {
     let error_writer = RotatingFileWriter::new(error_path, max_size_bytes, max_age)
         .map_err(|err| LogInitError::Io(format!("初始化 error.log 失败: {}", err)))?;
 
+    let split_writer = SplitLogWriter::new(info_writer, error_writer);
+
     let shared_format = fmt::format()
         .with_timer(LocalTimer)
         .with_level(true)
@@ -78,26 +80,15 @@ pub fn init_logging(config: &LoggingConfig) -> Result<(), LogInitError> {
         .with_writer(std::io::stdout)
         .with_ansi(true);
 
-    let info_layer = fmt::layer()
-        .event_format(shared_format.clone())
-        .with_ansi(false)
-        .with_writer(info_writer)
-        .with_filter(filter_fn(|metadata| {
-            let level = metadata.level();
-            *level >= Level::INFO && *level <= Level::WARN
-        }));
-
-    let error_layer = fmt::layer()
+    let file_layer = fmt::layer()
         .event_format(shared_format)
         .with_ansi(false)
-        .with_writer(error_writer)
-        .with_filter(TracingLevelFilter::ERROR);
+        .with_writer(split_writer);
 
     let subscriber = registry::Registry::default()
         .with(env_filter)
         .with(console_layer)
-        .with(info_layer)
-        .with(error_layer);
+        .with(file_layer);
 
     match subscriber::set_global_default(subscriber) {
         Ok(()) => {
@@ -140,6 +131,24 @@ struct RotatingFileWriter {
     inner: Arc<RotatingFileInner>,
 }
 
+#[derive(Clone)]
+struct SplitLogWriter {
+    info: RotatingFileWriter,
+    error: RotatingFileWriter,
+}
+
+#[derive(Clone)]
+enum SplitWriter {
+    Info(RotatingFileWriter),
+    Error(RotatingFileWriter),
+}
+
+impl SplitLogWriter {
+    fn new(info: RotatingFileWriter, error: RotatingFileWriter) -> Self {
+        Self { info, error }
+    }
+}
+
 struct RotatingFileInner {
     path: PathBuf,
     base_name: String,
@@ -152,6 +161,38 @@ struct FileState {
     file: File,
     created_at: SystemTime,
     size: u64,
+}
+
+impl<'a> MakeWriter<'a> for SplitLogWriter {
+    type Writer = SplitWriter;
+
+    fn make_writer(&'a self) -> Self::Writer {
+        SplitWriter::Info(self.info.clone())
+    }
+
+    fn make_writer_for(&'a self, metadata: &Metadata<'_>) -> Self::Writer {
+        if *metadata.level() == Level::ERROR {
+            SplitWriter::Error(self.error.clone())
+        } else {
+            SplitWriter::Info(self.info.clone())
+        }
+    }
+}
+
+impl Write for SplitWriter {
+    fn write(&mut self, buf: &[u8]) -> io::Result<usize> {
+        match self {
+            SplitWriter::Info(writer) => writer.write(buf),
+            SplitWriter::Error(writer) => writer.write(buf),
+        }
+    }
+
+    fn flush(&mut self) -> io::Result<()> {
+        match self {
+            SplitWriter::Info(writer) => writer.flush(),
+            SplitWriter::Error(writer) => writer.flush(),
+        }
+    }
 }
 
 impl RotatingFileWriter {
@@ -188,20 +229,6 @@ impl RotatingFileWriter {
     }
 }
 
-impl<'a> MakeWriter<'a> for RotatingFileWriter {
-    type Writer = RotatingFileGuard;
-
-    fn make_writer(&'a self) -> Self::Writer {
-        RotatingFileGuard {
-            inner: self.inner.clone(),
-        }
-    }
-}
-
-struct RotatingFileGuard {
-    inner: Arc<RotatingFileInner>,
-}
-
 #[derive(Clone)]
 struct LocalTimer;
 
@@ -213,6 +240,21 @@ impl FormatTime for LocalTimer {
 }
 
 impl RotatingFileInner {
+    fn write_bytes(&self, buf: &[u8]) -> io::Result<usize> {
+        let mut state = self.state.lock().expect("日志文件锁失效");
+        if self.should_rotate(&state, buf.len()) {
+            self.rotate(&mut state)?;
+        }
+        let written = state.file.write(buf)?;
+        state.size = state.size.saturating_add(written as u64);
+        Ok(written)
+    }
+
+    fn flush_writer(&self) -> io::Result<()> {
+        let mut state = self.state.lock().expect("日志文件锁失效");
+        state.file.flush()
+    }
+
     fn should_rotate(&self, state: &FileState, incoming: usize) -> bool {
         let size_exceeded =
             self.max_size != u64::MAX && state.size.saturating_add(incoming as u64) > self.max_size;
@@ -279,20 +321,13 @@ impl RotatingFileInner {
     }
 }
 
-impl Write for RotatingFileGuard {
+impl Write for RotatingFileWriter {
     fn write(&mut self, buf: &[u8]) -> io::Result<usize> {
-        let mut state = self.inner.state.lock().expect("日志文件锁失效");
-        if self.inner.should_rotate(&state, buf.len()) {
-            self.inner.rotate(&mut state)?;
-        }
-        let written = state.file.write(buf)?;
-        state.size = state.size.saturating_add(written as u64);
-        Ok(written)
+        self.inner.write_bytes(buf)
     }
 
     fn flush(&mut self) -> io::Result<()> {
-        let mut state = self.inner.state.lock().expect("日志文件锁失效");
-        state.file.flush()
+        self.inner.flush_writer()
     }
 }
 
