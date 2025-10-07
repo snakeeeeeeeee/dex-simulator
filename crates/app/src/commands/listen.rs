@@ -419,7 +419,7 @@ impl EventSink for LoggingEventSink {
             .map(|ts| ts.to_string())
             .unwrap_or_else(|| "-".into());
         tracing::info!(
-            "接收到事件: dex={}, kind={:?}, block={}, hash={}, time={}, tx={:#x}, log_index={}",
+            "接收到事件: dex={}, kind={:?}, block={}, block_hash={}, time={}, tx={:#x}, log_index={}",
             label,
             event.kind,
             event.block_number,
